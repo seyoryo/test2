@@ -1,0 +1,4047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Traffic Run | 3D Infinite Track Runner</title>
+    <!-- Tailwind CSS for responsive HUD & UI overlays -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for arcade racing typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Game Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js Core & GLTFLoader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+    <!-- PeerJS for Real-Time P2P Online Multiplayer on itch.io & Web -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- MQTT.js over WSS for Cross-Device / Cross-Network Firewall-Proof Relay Fallback -->
+    <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0f19;
+            font-family: 'Inter', sans-serif;
+        }
+        .font-arcade {
+            font-family: 'Orbitron', sans-serif;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+        }
+        .hud-layer {
+            position: relative;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .interactive-el {
+            pointer-events: auto;
+        }
+        .arcade-btn {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 8px 20px -4px rgba(239, 68, 68, 0.6), inset 0 2px 4px rgba(255, 255, 255, 0.35);
+            transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .arcade-btn:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 12px 26px -4px rgba(239, 68, 68, 0.8), inset 0 2px 6px rgba(255, 255, 255, 0.45);
+            background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+        }
+        .arcade-btn:active {
+            transform: translateY(1px) scale(0.98);
+        }
+        .arcade-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .secondary-btn {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+            transition: all 0.18s ease;
+        }
+        .secondary-btn:hover {
+            border-color: rgba(248, 113, 113, 0.6);
+            background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+            transform: translateY(-1px);
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.35); }
+            50% { box-shadow: 0 0 28px rgba(239, 68, 68, 0.75); }
+        }
+        .glow-card {
+            animation: pulseGlow 3s infinite ease-in-out;
+        }
+        input.room-code-input {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Full-Screen Startup Loading Screen Overlay -->
+<div id="loading-screen-overlay" class="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-6 transition-opacity duration-500">
+    <div class="glass-panel glow-card rounded-3xl p-8 max-w-sm w-full text-center border border-red-500/40 shadow-2xl">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 text-3xl">
+            <i class="fa-solid fa-car-side animate-bounce"></i>
+        </div>
+        <h2 class="font-arcade text-2xl font-black text-white uppercase tracking-wider mb-1">Traffic Run</h2>
+        <p id="loading-screen-status" class="text-xs text-slate-300 font-medium mb-5">Loading 3D Car Models (0/2)...</p>
+        <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-700/80">
+            <div id="loading-screen-bar" class="h-full bg-gradient-to-r from-red-500 to-amber-400 transition-all duration-300" style="width: 15%"></div>
+        </div>
+    </div>
+</div>
+
+<div id="game-container">
+    <!-- 3D WebGL Canvas Mount -->
+    <div id="canvas-holder" class="absolute inset-0"></div>
+
+    <!-- Top HUD Bar -->
+    <header class="hud-layer w-full p-3 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+        <!-- Distance & Best Score -->
+        <div class="flex items-center gap-2.5 sm:gap-4 flex-wrap">
+            <div class="glass-panel rounded-2xl px-4 py-2 sm:px-5 sm:py-2.5 shadow-xl border-l-4 border-l-red-500">
+                <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-400 font-semibold">Your Distance</div>
+                <div class="flex items-baseline gap-1">
+                    <span id="hud-distance" class="font-arcade text-xl sm:text-3xl font-black text-white tracking-tight">0</span>
+                    <span class="font-arcade text-xs sm:text-sm text-red-400 font-bold">m</span>
+                </div>
+            </div>
+
+            <!-- Opponent Live Distance (Visible in 2P Online Mode) -->
+            <div id="hud-opponent-card" class="hidden glass-panel rounded-2xl px-4 py-2 sm:px-5 sm:py-2.5 shadow-xl border-l-4 border-l-cyan-400">
+                <div class="flex items-center gap-1.5">
+                    <span id="hud-opponent-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span id="hud-opponent-label" class="text-[10px] sm:text-xs uppercase tracking-widest text-cyan-300 font-semibold">P2 Distance</span>
+                </div>
+                <div class="flex items-baseline gap-1">
+                    <span id="hud-opponent-distance" class="font-arcade text-xl sm:text-3xl font-black text-white tracking-tight">0</span>
+                    <span class="font-arcade text-xs sm:text-sm text-cyan-400 font-bold">m</span>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-xl hidden sm:block">
+                <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-400 font-semibold">Best Run</div>
+                <div class="flex items-baseline gap-1">
+                    <span id="hud-best" class="font-arcade text-lg sm:text-2xl font-bold text-amber-400">0</span>
+                    <span class="font-arcade text-xs text-amber-300/80">m</span>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-xl">
+                <div class="text-[10px] sm:text-xs uppercase tracking-widest text-slate-400 font-semibold">Speed</div>
+                <div class="flex items-baseline gap-1">
+                    <span id="hud-speed" class="font-arcade text-lg sm:text-2xl font-bold text-cyan-400">0</span>
+                    <span class="font-arcade text-[10px] sm:text-xs text-cyan-300/80">MPH</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Top Controls: GLB Uploader, Camera Toggle & Menu Button -->
+        <div class="interactive-el flex flex-wrap items-center gap-2">
+            <!-- Online Room Badge (when in 2P Online) -->
+            <div id="hud-room-badge" class="hidden glass-panel rounded-xl px-3 py-2 text-xs text-cyan-300 font-arcade font-bold flex items-center gap-2 border border-cyan-500/30">
+                <i class="fa-solid fa-wifi text-emerald-400"></i>
+                <span id="hud-room-code-text">ROOM: ----</span>
+            </div>
+
+            <!-- Status Pill for 3D Models (Hidden unless Fallback 3D is active) -->
+            <div id="model-status-pill" class="hidden glass-panel rounded-xl px-3 py-2 text-xs text-amber-300 flex items-center gap-2 shadow-lg border border-amber-500/30">
+                <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                <span id="status-text" class="font-medium">Fallback 3D Active</span>
+            </div>
+
+            <!-- Manual Upload Fallback Controls (Auto-hidden once itch.io zip GLBs load) -->
+            <div id="glb-upload-controls" class="flex flex-wrap items-center gap-2">
+                <label for="glb-both-input" class="secondary-btn cursor-pointer rounded-xl px-3 py-2 text-xs font-semibold text-white flex items-center gap-1.5" title="Select both mazda_miata_mx-5.glb and toyota_camry_2020.glb at once">
+                    <i class="fa-solid fa-car-side text-red-400"></i>
+                    <span>Load .GLB (Both)</span>
+                </label>
+                <input id="glb-both-input" type="file" accept=".glb,.gltf" multiple class="hidden">
+
+                <label for="glb-miata-input" class="secondary-btn cursor-pointer rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-200 hidden lg:flex items-center gap-1.5" title="Upload Miata Player .GLB">
+                    <i class="fa-solid fa-flag-checkered text-red-400"></i>
+                    <span>Miata .GLB</span>
+                </label>
+                <input id="glb-miata-input" type="file" accept=".glb,.gltf" class="hidden">
+
+                <label for="glb-toyota-input" class="secondary-btn cursor-pointer rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-200 hidden lg:flex items-center gap-1.5" title="Upload Camry/Toyota Traffic .GLB">
+                    <i class="fa-solid fa-car text-amber-400"></i>
+                    <span>Camry .GLB</span>
+                </label>
+                <input id="glb-toyota-input" type="file" accept=".glb,.gltf" class="hidden">
+            </div>
+
+            <button id="btn-sound-toggle" class="secondary-btn rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 flex items-center gap-1.5" title="Toggle Sound">
+                <i id="icon-sound" class="fa-solid fa-volume-high text-emerald-400"></i>
+                <span class="hidden md:inline">Sound</span>
+            </button>
+
+            <button id="btn-cam-view" class="secondary-btn rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 flex items-center gap-1.5" title="Cycle Camera Angle (C)">
+                <i class="fa-solid fa-video text-cyan-400"></i>
+                <span class="hidden md:inline">Camera (C)</span>
+            </button>
+
+            <button id="btn-open-menu" class="secondary-btn rounded-xl px-3 py-2 text-xs font-semibold text-slate-200 flex items-center gap-1.5" title="Return to Main Menu">
+                <i class="fa-solid fa-bars text-red-400"></i>
+                <span>Menu</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Spectator Banner (Shown in 2P Online when one player crashes and the other is still driving) -->
+    <div id="spectator-banner" class="hud-layer hidden w-full px-4 flex justify-center">
+        <div class="glass-panel rounded-2xl px-6 py-3 border border-amber-400/50 shadow-2xl max-w-lg w-full text-center">
+            <div class="flex items-center justify-center gap-2 text-amber-400 font-arcade font-bold text-sm uppercase tracking-wider">
+                <i class="fa-solid fa-eye animate-pulse"></i>
+                <span id="spectator-title">You Crashed! Spectating Other Player...</span>
+            </div>
+            <p id="spectator-subtitle" class="text-xs text-slate-300 mt-1">The other driver is still alive! Once both cars crash, the Host can restart the race.</p>
+        </div>
+    </div>
+
+    <!-- Center Modal Overlay (Main Menu / Online Lobby / Game Over) -->
+    <main class="hud-layer flex-1 flex items-center justify-center p-4 overflow-y-auto">
+
+        <!-- 1. MAIN MENU MODAL -->
+        <div id="main-menu-modal" class="interactive-el glass-panel glow-card rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl border border-red-500/40">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold uppercase tracking-widest mb-3">
+                <i class="fa-solid fa-gauge-high"></i>
+                <span>3D Infinite Highway</span>
+            </div>
+            <h1 class="font-arcade text-3xl sm:text-4xl font-black text-white tracking-wider uppercase mb-2">Traffic Run</h1>
+            <p class="text-xs sm:text-sm text-slate-300 mb-6">Weave through traffic solo or with a friend online!</p>
+
+            <div class="flex flex-col gap-3.5">
+                <button id="btn-menu-single" class="arcade-btn w-full py-4 px-6 rounded-2xl font-arcade text-base sm:text-lg font-bold text-white uppercase tracking-wider flex items-center justify-center gap-3">
+                    <i class="fa-solid fa-flag-checkered"></i>
+                    <span>Single Player</span>
+                </button>
+
+                <!-- Single Player Night Mode Toggle -->
+                <div class="bg-slate-900/85 rounded-2xl px-4 py-3 border border-slate-700/70 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5 text-left">
+                        <div class="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300">
+                            <i class="fa-solid fa-moon"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-white">Night Mode</div>
+                            <div class="text-[10px] text-slate-400">Drive under the stars with headlights</div>
+                        </div>
+                    </div>
+                    <button id="btn-menu-night" class="secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-slate-400 border border-slate-600/40">
+                        OFF
+                    </button>
+                </div>
+
+                <button id="btn-menu-online" class="secondary-btn w-full py-4 px-6 rounded-2xl font-arcade text-base sm:text-lg font-bold text-cyan-300 uppercase tracking-wider flex items-center justify-center gap-3 border border-cyan-500/40 hover:border-cyan-400">
+                    <i class="fa-solid fa-globe text-cyan-400"></i>
+                    <span>2 Player Online</span>
+                </button>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-slate-700/60 text-[11px] text-slate-400 flex flex-col gap-1">
+                <div>Controls: <span class="text-slate-200 font-semibold">A / D</span> or <span class="text-slate-200 font-semibold">Left / Right Arrows</span> to Steer</div>
+            </div>
+        </div>
+
+        <!-- 2. ONLINE LOBBY MODAL -->
+        <div id="online-lobby-modal" class="interactive-el hidden glass-panel rounded-3xl p-6 sm:p-8 max-w-lg w-full text-center shadow-2xl border border-cyan-500/40">
+            <div class="flex items-center justify-between mb-4">
+                <button id="btn-lobby-back" class="secondary-btn rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Back</span>
+                </button>
+                <span class="font-arcade text-xs uppercase tracking-widest text-cyan-400 font-bold">2-Player Online Mode</span>
+                <div class="w-14"></div>
+            </div>
+
+            <!-- Step A: Create or Join Selection -->
+            <div id="lobby-select-view">
+                <h2 class="font-arcade text-2xl sm:text-3xl font-black text-white uppercase mb-2">Online Race Lobby</h2>
+                <p class="text-xs sm:text-sm text-slate-300 mb-6">Create a room to generate a unique live room code, or enter a friend's room code to join side-by-side.</p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                    <!-- Create Room Card -->
+                    <div class="bg-slate-900/80 rounded-2xl p-4 border border-slate-700/70 flex flex-col justify-between">
+                        <div>
+                            <div class="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 mx-auto mb-2.5">
+                                <i class="fa-solid fa-plus"></i>
+                            </div>
+                            <h3 class="font-arcade text-sm font-bold text-white uppercase">Host a Room</h3>
+                            <p class="text-xs text-slate-400 mt-1 mb-4">Spawns on the <span class="text-red-300 font-semibold">Left Side</span> & controls room settings.</p>
+                        </div>
+                        <button id="btn-create-room" class="arcade-btn w-full py-3 px-4 rounded-xl font-arcade text-xs font-bold text-white uppercase tracking-wider">
+                            Create Room
+                        </button>
+                    </div>
+
+                    <!-- Join Room Card -->
+                    <div class="bg-slate-900/80 rounded-2xl p-4 border border-slate-700/70 flex flex-col justify-between">
+                        <div>
+                            <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mx-auto mb-2.5">
+                                <i class="fa-solid fa-right-to-bracket"></i>
+                            </div>
+                            <h3 class="font-arcade text-sm font-bold text-white uppercase">Join a Room</h3>
+                            <p class="text-xs text-slate-400 mt-1 mb-3">Spawns on the <span class="text-cyan-300 font-semibold">Right Side</span> next to the host.</p>
+                            <input id="input-room-code" type="text" maxlength="6" placeholder="ENTER CODE" class="room-code-input w-full bg-slate-950 border border-slate-600 focus:border-cyan-400 rounded-xl px-3 py-2 text-center font-arcade text-base font-bold text-white uppercase tracking-widest mb-3 outline-none">
+                        </div>
+                        <button id="btn-join-room" class="secondary-btn w-full py-3 px-4 rounded-xl font-arcade text-xs font-bold text-cyan-300 uppercase tracking-wider border border-cyan-500/40">
+                            Join Room
+                        </button>
+                    </div>
+                </div>
+
+                <div id="lobby-error-msg" class="hidden text-xs text-red-400 bg-red-950/60 border border-red-500/40 rounded-xl px-3 py-2 font-medium"></div>
+            </div>
+
+            <!-- Step B: Active Room Waiting View -->
+            <div id="lobby-room-view" class="hidden">
+                <div class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-1">Unique Room Code</div>
+                <div class="flex items-center justify-center gap-2 mb-5">
+                    <div id="display-room-code" class="font-arcade text-3xl sm:text-4xl font-black text-amber-400 tracking-widest bg-slate-900/90 px-6 py-2.5 rounded-2xl border border-amber-400/40">
+                        ------
+                    </div>
+                    <button id="btn-copy-code" class="secondary-btn rounded-2xl px-3.5 py-3 text-slate-200 hover:text-white text-sm" title="Copy Room Code">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+
+                <!-- Side-by-Side Spawn Slots -->
+                <div class="grid grid-cols-2 gap-3 mb-5">
+                    <div class="bg-slate-900/80 rounded-2xl p-3.5 border border-red-500/40 text-left">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-[10px] font-arcade uppercase tracking-wider text-red-400 font-bold">Left Lane (P1)</span>
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        </div>
+                        <div class="font-bold text-white text-sm" id="slot-p1-name">Host (Ready)</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">Mazda Miata MX-5</div>
+                    </div>
+
+                    <div id="slot-p2-card" class="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-700/70 text-left">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-[10px] font-arcade uppercase tracking-wider text-cyan-400 font-bold">Right Lane (P2)</span>
+                            <span id="slot-p2-dot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        </div>
+                        <div class="font-bold text-slate-300 text-sm" id="slot-p2-name">Waiting for Player...</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">Side-by-Side Spawn</div>
+                    </div>
+                </div>
+
+                <!-- Host Toggle: Player Collision ON / OFF -->
+                <div class="bg-slate-900/90 rounded-2xl p-3.5 border border-slate-700/70 flex items-center justify-between mb-3">
+                    <div class="text-left">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                            <i class="fa-solid fa-car-burst text-amber-400"></i>
+                            <span>Player-to-Player Collision</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400">Host can toggle whether player cars can bump each other</div>
+                    </div>
+                    <button id="btn-toggle-collision" class="secondary-btn rounded-xl px-4 py-2 font-arcade text-xs font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/40">
+                        ON
+                    </button>
+                </div>
+
+                <!-- Host Toggle: Night Mode ON / OFF -->
+                <div class="bg-slate-900/90 rounded-2xl p-3.5 border border-slate-700/70 flex items-center justify-between mb-5">
+                    <div class="text-left">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">
+                            <i class="fa-solid fa-moon text-indigo-400"></i>
+                            <span>Night Mode</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400">Host can toggle nighttime highway driving for the room</div>
+                    </div>
+                    <button id="btn-lobby-night" class="secondary-btn rounded-xl px-4 py-2 font-arcade text-xs font-bold uppercase tracking-wider text-slate-400 border border-slate-600/40">
+                        OFF
+                    </button>
+                </div>
+
+                <button id="btn-host-start" disabled class="arcade-btn w-full py-3.5 px-6 rounded-2xl font-arcade text-base font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-flag-checkered"></i>
+                    <span id="btn-host-start-text">Waiting for Player 2...</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. GAME OVER MODAL -->
+        <div id="game-over-modal" class="interactive-el hidden glass-panel glow-card rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl border border-red-500/40 transform transition-all">
+            <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center text-red-400 text-2xl">
+                <i id="game-over-icon" class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h1 id="game-over-heading" class="font-arcade text-2xl sm:text-3xl font-black text-white tracking-wider uppercase mb-5">Crashed</h1>
+            <p id="game-over-reason" class="hidden text-xs sm:text-sm text-red-300 font-medium mb-5"></p>
+
+            <!-- Solo Score Grid -->
+            <div id="solo-score-grid" class="grid grid-cols-2 gap-3 mb-5">
+                <div class="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-700/60">
+                    <div class="text-[11px] uppercase tracking-wider text-slate-400">Distance Driven</div>
+                    <div id="final-distance" class="font-arcade text-2xl font-black text-white mt-0.5">0 m</div>
+                </div>
+                <div class="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-700/60">
+                    <div class="text-[11px] uppercase tracking-wider text-slate-400">Best Record</div>
+                    <div id="final-best" class="font-arcade text-2xl font-black text-amber-400 mt-0.5">0 m</div>
+                </div>
+            </div>
+
+            <!-- Online 2-Player Score Grid -->
+            <div id="online-score-grid" class="hidden flex-col gap-3 mb-5">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-900/80 rounded-2xl p-3.5 border border-red-500/40">
+                        <div class="text-[10px] uppercase tracking-wider text-red-300 font-semibold">Left Car (Host)</div>
+                        <div id="final-p1-distance" class="font-arcade text-xl font-black text-white mt-0.5">0 m</div>
+                    </div>
+                    <div class="bg-slate-900/80 rounded-2xl p-3.5 border border-cyan-500/40">
+                        <div class="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold">Right Car (Guest)</div>
+                        <div id="final-p2-distance" class="font-arcade text-xl font-black text-white mt-0.5">0 m</div>
+                    </div>
+                </div>
+
+                <!-- Host Toggles on Post-Race Screen -->
+                <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-700/70 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-300">Player Collision (Next Race):</span>
+                    <button id="btn-gameover-collision" class="secondary-btn rounded-xl px-3.5 py-1.5 font-arcade text-xs font-bold uppercase text-emerald-400 border border-emerald-500/40">
+                        ON
+                    </button>
+                </div>
+
+                <div class="bg-slate-900/90 rounded-2xl p-3 border border-slate-700/70 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-300">Night Mode (Next Race):</span>
+                    <button id="btn-gameover-night" class="secondary-btn rounded-xl px-3.5 py-1.5 font-arcade text-xs font-bold uppercase text-slate-400 border border-slate-600/40">
+                        OFF
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2.5">
+                <button id="btn-restart" class="arcade-btn w-full py-3.5 px-6 rounded-2xl font-arcade text-sm sm:text-base font-bold text-white uppercase tracking-wider flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span id="btn-restart-text">Race Again</span>
+                </button>
+                <button id="btn-gameover-menu" class="secondary-btn w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-slate-300 hover:text-white">
+                    Return to Main Menu
+                </button>
+            </div>
+            <div id="restart-hint-text" class="mt-3 text-xs text-slate-400">Press <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-slate-200">Space</kbd> or <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 text-slate-200">Enter</kbd> to restart</div>
+        </div>
+    </main>
+
+    <!-- Bottom HUD Bar (No touch arrows) -->
+    <footer class="hud-layer w-full p-3 sm:p-5 flex flex-col items-center justify-end gap-2">
+    </footer>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const CloudBridge = {
+        db: null,
+        auth: null,
+        user: null,
+        appId: typeof __app_id !== 'undefined' ? __app_id : 'miata-runner-app',
+        unsubRoom: null,
+
+        async init() {
+            try {
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    const firebaseConfig = JSON.parse(__firebase_config);
+                    const app = initializeApp(firebaseConfig);
+                    this.auth = getAuth(app);
+                    this.db = getFirestore(app);
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(this.auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(this.auth);
+                    }
+                    this.user = this.auth.currentUser;
+                    const uidEl = document.getElementById('user-id-display');
+                    if (uidEl && this.user) {
+                        uidEl.textContent = `Online ID: ${this.user.uid}`;
+                    }
+                } else {
+                    const uidEl = document.getElementById('user-id-display');
+                    if (uidEl) {
+                        uidEl.textContent = `Online P2P Ready (itch.io / WebRTC)`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Cloud init fallback to WebRTC P2P:', e);
+            }
+        },
+
+        async isCodeTakenInCloud(code) {
+            if (!this.db || !this.user) return false;
+            try {
+                const roomsCol = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'rooms');
+                const snap = await getDocs(roomsCol);
+                let exists = false;
+                snap.forEach(d => {
+                    if (d.id === code) exists = true;
+                });
+                return exists;
+            } catch (e) {
+                return false;
+            }
+        },
+
+        async createCloudRoom(code, initialData) {
+            if (!this.db || !this.user) return;
+            try {
+                const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'rooms', code);
+                await setDoc(roomRef, initialData);
+            } catch (e) {
+                console.warn('Cloud room create warning:', e);
+            }
+        },
+
+        async getCloudRoom(code) {
+            if (!this.db || !this.user) return null;
+            try {
+                const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'rooms', code);
+                const snap = await getDoc(roomRef);
+                return snap.exists() ? snap.data() : null;
+            } catch (e) {
+                return null;
+            }
+        },
+
+        async updateCloudRoom(code, patch) {
+            if (!this.db || !this.user || !code) return;
+            try {
+                const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'rooms', code);
+                await updateDoc(roomRef, patch);
+            } catch (e) {}
+        },
+
+        listenToRoom(code, onUpdate) {
+            if (this.unsubRoom) {
+                this.unsubRoom();
+                this.unsubRoom = null;
+            }
+            if (!this.db || !this.user || !code) return;
+            const roomRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'rooms', code);
+            this.unsubRoom = onSnapshot(
+                roomRef,
+                (snap) => {
+                    if (snap.exists()) {
+                        onUpdate(snap.data());
+                    }
+                },
+                (err) => {
+                    console.warn('Room listener error:', err);
+                }
+            );
+        }
+    };
+
+    window.CloudBridge = CloudBridge;
+    CloudBridge.init();
+</script>
+
+<script>
+    /**
+     * 3D Infinite Runner Racing Game - Mazda Miata MX-5 & Toyota Camry 50 MPH Traffic
+     * Supports Single Player + 2-Player Real-Time Online (Unique Room Code, Side-by-Side Spawn,
+     * Host Collision Toggle, and Independent Crash/Spectate until both players crash).
+     */
+    (function () {
+        // --- Game Configuration Constants ---
+        const TRACK_WIDTH = 16;          // Road width in world units
+        const SEGMENT_LENGTH = 10;       // Length of each procedural road segment
+        const VISIBLE_SEGMENTS = 30;     // Number of segments ahead of the furthest player
+        const BEHIND_SEGMENTS = 8;       // Segments kept behind the trailing car before disposal
+        const BASE_SPEED = 42;           // Base forward speed (units/sec, ~92 MPH)
+        const ACCEL_PER_METER = 0.00375; // Halved acceleration rate with no upper speed cap
+        const STEER_SPEED = 22;          // Reference peak lateral speed (units/sec) at STEER_REF_CLOSING; real peak scales with speed (see GAP_TRAVEL block)
+        const TRAFFIC_MPH = 50;          // Constant traffic speed in MPH
+        const TRAFFIC_SPEED = TRAFFIC_MPH / 2.2; // 50 MPH converted to world units/sec (~22.73)
+        // Lengthwise (front-to-back) traffic spacing: a traffic row can spawn every N road segments (SEGMENT_LENGTH units each).
+        // Was 4 (rows >= 40 units apart); 8 doubles it. Raise for more space between cars, lower for denser traffic.
+        const TRAFFIC_ROW_INTERVAL = 8;
+        // --- Car sizing: ONE shared scale drives the Miata AND the Camrys (3D models + hitboxes) ---
+        const LANE_SPACING = TRACK_WIDTH / 3;   // Center-to-center distance between adjacent traffic lanes
+        const GAP_CLEARANCE = 0;                // Extra slack (world units) beyond the Miata's width; 0 = exactly equal
+        // Base (unscaled) hitbox half-extents
+        const MIATA_HALF_W = 0.78, MIATA_HALF_L = 1.80;
+        const CAMRY_HALF_W = 0.80, CAMRY_HALF_L = 2.05;
+        // Solve for the scale where the gap between two side-by-side Camry hitboxes == Miata hitbox width:
+        //   LANE_SPACING - 2*CAMRY_HALF_W*s  =  2*MIATA_HALF_W*s + GAP_CLEARANCE
+        const CAR_SCALE = (LANE_SPACING - GAP_CLEARANCE) / (2 * (MIATA_HALF_W + CAMRY_HALF_W)); // ~1.6878 (was 4/3)
+        const CAR_GROWTH = CAR_SCALE / (4 / 3); // ~1.266x vs. the old scale; keeps fixed-unit distance thresholds proportional
+        // --- Speed-scaled steering: a full lane-to-lane swing always takes less than one traffic gap ---
+        // Same-lane Camrys (worst case = consecutive rows) sit TRAFFIC_ROW_INTERVAL * SEGMENT_LENGTH apart centre-to-centre.
+        // GAP_TRAVEL = distance the Miata covers relative to traffic from "just ahead of car A" to "just behind car B".
+        const GAP_TRAVEL = TRAFFIC_ROW_INTERVAL * SEGMENT_LENGTH - 2 * (CAMRY_HALF_L + MIATA_HALF_L) * CAR_SCALE; // ~67.0
+        const LANE_CROSS_DIST = 2 * LANE_SPACING;      // centre of one side lane -> centre of the other side lane (~10.67)
+        const STEER_LAG = 1 / 9.5 + 1 / 10.5;          // response lag (s) of the steering-rack + tyre-grip lerps at scale 1
+        // Max share of the gap window that a full lane-to-lane swing may take. Keep < 1 (0.625 = swing takes at most 62.5% of the window).
+        const STEER_SWING_FRACTION = 0.625;
+        // Closing speed (player speed - traffic speed) above which the base tuning would break that limit (~61.1).
+        // Below it steering stays at the base tuning (never slower); above it, steering scales linearly with closing speed:
+        //   LANE_CROSS_DIST / STEER_SPEED + STEER_LAG  =  STEER_SWING_FRACTION * GAP_TRAVEL / STEER_REF_CLOSING
+        const STEER_REF_CLOSING = STEER_SWING_FRACTION * GAP_TRAVEL / (LANE_CROSS_DIST / STEER_SPEED + STEER_LAG);
+        const HOST_SPAWN_OFFSET = -3.6;  // Left side spawn for Host (P1)
+        const GUEST_SPAWN_OFFSET = 3.6;  // Right side spawn for Guest (P2)
+        const localCarColor = '#dc2626';
+
+        // --- Global State ---
+        let scene, camera, renderer, clock;
+        let playerGroup, carVisualGroup, fallbackCarMesh, loadedMiataModel = null;
+        let remotePlayerGroup, remoteCarVisualGroup, remoteFallbackCarMesh, remoteLoadedMiataModel = null;
+        let loadedToyotaTemplate = null;
+        let fallbackWheels = [];
+        let remoteFallbackWheels = [];
+        let trafficCars = [];
+
+        // Menu & Match Lifecycle State
+        let gameMode = 'menu'; // 'menu' | 'single' | 'online_lobby' | 'online_playing'
+        let isGameOver = false;
+        let localCrashed = false;
+        let localCrashReason = '';
+        let distanceScore = 0;
+        let devMode = false, devUsed = false, devDistanceOffset = 0, devSpeedOffset = 0; // dev mode (Shift+J x3, then L)
+        let bestScore = 0;
+        let currentSpeed = BASE_SPEED;
+        let miataLoadedFlag = false;
+        let toyotaLoadedFlag = false;
+        let miataSettled = false;
+        let toyotaSettled = false;
+
+        // Procedural Textures Cache
+        let roadAsphaltTexture = null;
+        let grassMeadowTexture = null;
+        let treeBarkTexture = null;
+        let treeFoliageTexture = null;
+        let curbRedTexture = null;
+        let curbWhiteTexture = null;
+        let guardrailSteelTexture = null;
+
+        // Online Multiplayer State
+        let isOnlineMode = false;
+        let isHost = false;
+        let roomCode = '';
+        let playerCollisionEnabled = true;
+        let nightModeEnabled = false;
+        let singlePlayerNightMode = false;
+        let matchSeed = 1001;
+        let currentMatchId = 0;
+        let peerInstance = null;
+        let peerConn = null;
+        let lastCloudSyncTime = 0;
+        let lastRelaySyncTime = 0;
+        let lobbySyncInterval = null;
+        let onlineSpawnHoldTimer = 0; // Brief starting-line hold so both cars spawn aligned at z = 0
+
+        // ICE Configuration with multiple STUN + Public TURN Relay servers so cross-device connections work across NATs/firewalls
+        const PEER_ICE_CONFIG = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun.cloudflare.com:3478' },
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            sdpSemantics: 'unified-plan'
+        };
+
+        // Cross-Device WSS Relay Bridge (Guarantees instant connection even when cellular/router NAT blocks WebRTC UDP)
+        const WSSRelayBridge = {
+            client: null,
+            connected: false,
+            currentRoom: '',
+            role: '', // 'host' | 'guest'
+            clientId: 'tr_' + Math.random().toString(36).substring(2, 10),
+            onPacketCallback: null,
+            brokerUrls: [
+                'wss://broker.emqx.io:8084/mqtt',
+                'wss://broker.hivemq.com:8884/mqtt',
+                'wss://test.mosquitto.org:8081/mqtt'
+            ],
+            brokerIndex: 0,
+
+            connectRoom(code, role, onPacket, onReady) {
+                this.disconnect();
+                if (!window.mqtt) {
+                    if (onReady) onReady(false);
+                    return;
+                }
+                this.currentRoom = code;
+                this.role = role;
+                this.onPacketCallback = onPacket;
+                this._tryConnectBroker(0, onReady);
+            },
+
+            _tryConnectBroker(idx, onReady) {
+                if (!window.mqtt || idx >= this.brokerUrls.length) {
+                    if (onReady) onReady(false);
+                    return;
+                }
+                const url = this.brokerUrls[idx];
+                let readyCalled = false;
+
+                try {
+                    const client = window.mqtt.connect(url, {
+                        clientId: `${this.clientId}_${Date.now().toString(36)}`,
+                        clean: true,
+                        connectTimeout: 4000,
+                        reconnectPeriod: 2000
+                    });
+                    this.client = client;
+
+                    const failTimer = setTimeout(() => {
+                        if (!this.connected && !readyCalled) {
+                            readyCalled = true;
+                            try { client.end(true); } catch (e) {}
+                            this._tryConnectBroker(idx + 1, onReady);
+                        }
+                    }, 4200);
+
+                    client.on('connect', () => {
+                        clearTimeout(failTimer);
+                        this.connected = true;
+                        const subTopic = this.role === 'host'
+                            ? `traffic-run-itch-v2/${this.currentRoom}/to-host`
+                            : `traffic-run-itch-v2/${this.currentRoom}/to-guest`;
+
+                        client.subscribe(subTopic, { qos: 0 }, () => {
+                            if (!readyCalled) {
+                                readyCalled = true;
+                                if (onReady) onReady(true);
+                            }
+                        });
+                    });
+
+                    client.on('message', (topic, message) => {
+                        try {
+                            const parsed = JSON.parse(message.toString());
+                            if (parsed && parsed.senderId !== this.clientId && this.onPacketCallback) {
+                                this.onPacketCallback(parsed);
+                            }
+                        } catch (e) {}
+                    });
+
+                    client.on('error', () => {
+                        if (!this.connected && !readyCalled) {
+                            clearTimeout(failTimer);
+                            readyCalled = true;
+                            try { client.end(true); } catch (e) {}
+                            this._tryConnectBroker(idx + 1, onReady);
+                        }
+                    });
+                } catch (err) {
+                    if (!readyCalled) {
+                        readyCalled = true;
+                        this._tryConnectBroker(idx + 1, onReady);
+                    }
+                }
+            },
+
+            send(payload) {
+                if (!this.client || !this.connected || !this.currentRoom) return;
+                const targetTopic = this.role === 'host'
+                    ? `traffic-run-itch-v2/${this.currentRoom}/to-guest`
+                    : `traffic-run-itch-v2/${this.currentRoom}/to-host`;
+                try {
+                    const msg = JSON.stringify({
+                        ...payload,
+                        senderId: this.clientId
+                    });
+                    this.client.publish(targetTopic, msg, { qos: 0 });
+                } catch (e) {}
+            },
+
+            disconnect() {
+                this.connected = false;
+                this.currentRoom = '';
+                if (this.client) {
+                    try {
+                        this.client.end(true);
+                    } catch (e) {}
+                    this.client = null;
+                }
+            }
+        };
+
+        // --- Synthesized Web Audio Sound System ---
+        const SoundFX = {
+            ctx: null,
+            muted: false,
+            engineOsc1: null,
+            engineOsc2: null,
+            engineGain: null,
+            engineFilter: null,
+            running: false,
+
+            init() {
+                if (this.ctx) {
+                    if (this.ctx.state === 'suspended') {
+                        this.ctx.resume();
+                    }
+                    return;
+                }
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                this.ctx = new AudioCtx();
+
+                // Dual-oscillator sporty 4-cylinder Miata engine synth
+                this.engineOsc1 = this.ctx.createOscillator();
+                this.engineOsc2 = this.ctx.createOscillator();
+                this.engineFilter = this.ctx.createBiquadFilter();
+                this.engineGain = this.ctx.createGain();
+
+                this.engineOsc1.type = 'sawtooth';
+                this.engineOsc2.type = 'triangle';
+                this.engineOsc1.frequency.value = 65;
+                this.engineOsc2.frequency.value = 130;
+
+                this.engineFilter.type = 'lowpass';
+                this.engineFilter.frequency.value = 380;
+                this.engineFilter.Q.value = 2.5;
+
+                this.engineGain.gain.value = 0.0001;
+
+                this.engineOsc1.connect(this.engineFilter);
+                this.engineOsc2.connect(this.engineFilter);
+                this.engineFilter.connect(this.engineGain);
+                this.engineGain.connect(this.ctx.destination);
+
+                this.engineOsc1.start();
+                this.engineOsc2.start();
+                this.running = true;
+            },
+
+            toggleMute() {
+                this.init();
+                this.muted = !this.muted;
+                const icon = document.getElementById('icon-sound');
+                if (icon) {
+                    icon.className = this.muted
+                        ? 'fa-solid fa-volume-xmark text-slate-400'
+                        : 'fa-solid fa-volume-high text-emerald-400';
+                }
+                if (this.muted && this.engineGain && this.ctx) {
+                    this.engineGain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.05);
+                }
+            },
+
+            updateEngine(speed, isDriving, steerAmount) {
+                if (!this.running || !this.ctx) return;
+                if (this.muted || !isDriving) {
+                    this.engineGain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.08);
+                    return;
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+                // Simulate multi-gear arcade RPM curve that stays clean at unlimited speeds
+                const normSpeed = Math.max(0, (speed - 30) / 55);
+                const clampedNorm = Math.min(normSpeed, 2.5);
+                const gearPhase = (normSpeed * 2.4) % 1.0;
+                const baseFreq = 58 + clampedNorm * 52 + gearPhase * 42;
+                const now = this.ctx.currentTime;
+
+                this.engineOsc1.frequency.setTargetAtTime(baseFreq, now, 0.05);
+                this.engineOsc2.frequency.setTargetAtTime(baseFreq * 2.0, now, 0.05);
+                this.engineFilter.frequency.setTargetAtTime(320 + clampedNorm * 480 + Math.abs(steerAmount) * 120, now, 0.06);
+                this.engineGain.gain.setTargetAtTime(0.055 + clampedNorm * 0.025, now, 0.08);
+            },
+
+            playClick() {
+                this.init();
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.exponentialRampToValueAtTime(780, now + 0.06);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.07);
+            },
+
+            playPassBy() {
+                if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
+                const now = this.ctx.currentTime;
+                // Filtered noise whoosh with Doppler pitch drop
+                const bufferSize = this.ctx.sampleRate * 0.28;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI);
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(650, now);
+                filter.frequency.exponentialRampToValueAtTime(220, now + 0.26);
+                filter.Q.value = 1.8;
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.09, now);
+                gain.gain.exponentialRampToValueAtTime(0.005, now + 0.27);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+            },
+
+            playCrash() {
+                this.init();
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // Stop engine immediately
+                if (this.engineGain) {
+                    this.engineGain.gain.setTargetAtTime(0.0001, now, 0.02);
+                }
+
+                // 1. Metallic Crunch Noise Burst
+                const bufferSize = this.ctx.sampleRate * 0.55;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.16));
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1400, now);
+                filter.frequency.exponentialRampToValueAtTime(180, now + 0.5);
+
+                const nGain = this.ctx.createGain();
+                nGain.gain.setValueAtTime(0.28, now);
+                nGain.gain.exponentialRampToValueAtTime(0.005, now + 0.54);
+
+                noise.connect(filter);
+                filter.connect(nGain);
+                nGain.connect(this.ctx.destination);
+                noise.start(now);
+
+                // 2. Low Impact Thud
+                const osc = this.ctx.createOscillator();
+                const oGain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(135, now);
+                osc.frequency.exponentialRampToValueAtTime(28, now + 0.35);
+                oGain.gain.setValueAtTime(0.22, now);
+                oGain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+                osc.connect(oGain);
+                oGain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.38);
+            }
+        };
+
+        const remoteState = {
+            connected: false,
+            matchId: 0,
+            color: '#0284c7',
+            offset: GUEST_SPAWN_OFFSET,
+            targetOffset: GUEST_SPAWN_OFFSET,
+            z: 0,
+            targetZ: 0,
+            crashZ: 0,
+            velX: 0,
+            steerAngle: 0,
+            speed: BASE_SPEED,
+            distance: 0,
+            crashed: false,
+            crashReason: ''
+        };
+        let hostLobbyColor = localCarColor;
+
+        // Player kinematics
+        let playerX = 0;
+        let playerOffset = 0; // Lateral offset relative to the track center
+        let playerZ = 0;
+        let playerVelX = 0;
+        let playerBumpSide = -1;     // Which side of the other player's car we're on (-1 left, +1 right); used to push the right way on contact
+        let bumpImpulseTimer = 0;    // Limits the sideways bounce kick to one per impact
+        let currentSteerAngle = 0;
+        let steerWheelAngle = 0;
+        let currentRollAngle = 0;
+        let currentPitchAngle = 0;
+        let rollVelocity = 0;
+
+        // Procedural Track State
+        let trackSegments = [];
+        let nextSegmentIndex = 0;
+        let currentTrackCenterX = 0;
+        let currentTrackSlopeX = 0;
+        let targetTrackSlopeX = 0;
+
+        // Deterministic PRNG for synchronized online track & traffic
+        function seededRandom(seedVal) {
+            let t = (seedVal + 0x6D2B79F5) | 0;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        }
+
+        // Input State
+        const keys = {
+            left: false,
+            right: false
+        };
+
+        // Camera Presets
+        const cameraPresets = [
+            { height: 3.6, distance: 7.8, lookAhead: 12 }, // Standard Third-Person Follow
+            { height: 5.5, distance: 11.0, lookAhead: 16 }, // High Chase Cam
+            { height: 2.2, distance: 5.4, lookAhead: 15 }  // Low Action Cam
+        ];
+        let currentCamPreset = 0;
+        let cameraLookTarget = new THREE.Vector3();
+
+        // DOM Elements
+        const domDistance = document.getElementById('hud-distance');
+        const domBest = document.getElementById('hud-best');
+        const domSpeed = document.getElementById('hud-speed');
+        const domOpponentCard = document.getElementById('hud-opponent-card');
+        const domOpponentDistance = document.getElementById('hud-opponent-distance');
+        const domOpponentLabel = document.getElementById('hud-opponent-label');
+        const domOpponentDot = document.getElementById('hud-opponent-dot');
+        const domRoomBadge = document.getElementById('hud-room-badge');
+        const domRoomCodeText = document.getElementById('hud-room-code-text');
+        const domSpectatorBanner = document.getElementById('spectator-banner');
+        const domSpectatorTitle = document.getElementById('spectator-title');
+        const domSpectatorSubtitle = document.getElementById('spectator-subtitle');
+
+        const domMainMenuModal = document.getElementById('main-menu-modal');
+        const domOnlineLobbyModal = document.getElementById('online-lobby-modal');
+        const domGameOverModal = document.getElementById('game-over-modal');
+        const domGameOverHeading = document.getElementById('game-over-heading');
+        const domGameOverReason = document.getElementById('game-over-reason');
+        const domFinalDistance = document.getElementById('final-distance');
+        const domFinalBest = document.getElementById('final-best');
+        const domSoloScoreGrid = document.getElementById('solo-score-grid');
+        const domOnlineScoreGrid = document.getElementById('online-score-grid');
+        const domFinalP1Distance = document.getElementById('final-p1-distance');
+        const domFinalP2Distance = document.getElementById('final-p2-distance');
+        const domBtnRestart = document.getElementById('btn-restart');
+        const domBtnRestartText = document.getElementById('btn-restart-text');
+        const domRestartHintText = document.getElementById('restart-hint-text');
+
+        const domModelStatusPill = document.getElementById('model-status-pill');
+        const domStatusDot = document.getElementById('status-dot');
+        const domStatusText = document.getElementById('status-text');
+        const domUploadControls = document.getElementById('glb-upload-controls');
+        const domLoadingOverlay = document.getElementById('loading-screen-overlay');
+        const domLoadingStatus = document.getElementById('loading-screen-status');
+        const domLoadingBar = document.getElementById('loading-screen-bar');
+
+        function createConfiguredGLTFLoader() {
+            const loader = new THREE.GLTFLoader();
+            if (THREE.DRACOLoader) {
+                const dracoLoader = new THREE.DRACOLoader();
+                dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+                loader.setDRACOLoader(dracoLoader);
+            }
+            return loader;
+        }
+
+        function updateModelStatusUI() {
+            const loadedCount = (miataLoadedFlag ? 1 : 0) + (toyotaLoadedFlag ? 1 : 0);
+            if (domLoadingStatus) {
+                domLoadingStatus.textContent = `Loading 3D Car Models (${loadedCount}/2)...`;
+            }
+            if (domLoadingBar) {
+                const pct = loadedCount === 2 ? 100 : (loadedCount === 1 ? 60 : 25);
+                domLoadingBar.style.width = `${pct}%`;
+            }
+
+            if (miataLoadedFlag && toyotaLoadedFlag) {
+                if (domModelStatusPill) domModelStatusPill.classList.add('hidden');
+                if (domUploadControls) domUploadControls.classList.add('hidden');
+            } else if (miataSettled && toyotaSettled) {
+                if (domModelStatusPill) domModelStatusPill.classList.remove('hidden');
+                if (domStatusDot) domStatusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+                if (domStatusText) domStatusText.textContent = 'Fallback 3D Active';
+            }
+        }
+
+        function checkAndDismissLoadingScreen() {
+            if (miataSettled && toyotaSettled && domLoadingOverlay) {
+                if (domLoadingBar) domLoadingBar.style.width = '100%';
+                if (domLoadingStatus) {
+                    domLoadingStatus.textContent = (miataLoadedFlag && toyotaLoadedFlag)
+                        ? 'Models Ready! Starting Traffic Run...'
+                        : 'Starting Traffic Run...';
+                }
+                setTimeout(() => {
+                    domLoadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+                    setTimeout(() => {
+                        domLoadingOverlay.classList.add('hidden');
+                    }, 500);
+                }, 250);
+            }
+        }
+
+        setTimeout(() => {
+            if (!miataSettled || !toyotaSettled) {
+                miataSettled = true;
+                toyotaSettled = true;
+                updateModelStatusUI();
+                checkAndDismissLoadingScreen();
+            }
+        }, 4500);
+
+        function initProceduralTextures() {
+            // 1. Detailed Asphalt Road Texture
+            const roadCanvas = document.createElement('canvas');
+            roadCanvas.width = 512;
+            roadCanvas.height = 512;
+            const rCtx = roadCanvas.getContext('2d');
+            rCtx.fillStyle = '#262e3d';
+            rCtx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 16000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const v = 30 + Math.floor(Math.random() * 34);
+                rCtx.fillStyle = `rgb(${v}, ${v + 4}, ${v + 12})`;
+                rCtx.fillRect(x, y, 2, 2);
+            }
+
+            rCtx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+            [85, 256, 427].forEach(lx => {
+                rCtx.fillRect(lx - 34, 0, 20, 512);
+                rCtx.fillRect(lx + 14, 0, 20, 512);
+            });
+
+            rCtx.fillStyle = 'rgba(248, 250, 252, 0.85)';
+            rCtx.fillRect(10, 0, 8, 512);
+            rCtx.fillRect(494, 0, 8, 512);
+
+            roadAsphaltTexture = new THREE.CanvasTexture(roadCanvas);
+            roadAsphaltTexture.wrapS = THREE.RepeatWrapping;
+            roadAsphaltTexture.wrapT = THREE.RepeatWrapping;
+            roadAsphaltTexture.anisotropy = 4;
+
+            // 2. Lush Daytime Grass Meadow Texture
+            const grassCanvas = document.createElement('canvas');
+            grassCanvas.width = 512;
+            grassCanvas.height = 512;
+            const gCtx = grassCanvas.getContext('2d');
+            gCtx.fillStyle = '#367527';
+            gCtx.fillRect(0, 0, 512, 512);
+
+            const grassPalette = ['#2d6320', '#3f852e', '#4b9637', '#26541b', '#55a63f'];
+            for (let i = 0; i < 18000; i++) {
+                gCtx.fillStyle = grassPalette[i % grassPalette.length];
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                gCtx.fillRect(x, y, 2, 5);
+            }
+            grassMeadowTexture = new THREE.CanvasTexture(grassCanvas);
+            grassMeadowTexture.wrapS = THREE.RepeatWrapping;
+            grassMeadowTexture.wrapT = THREE.RepeatWrapping;
+            grassMeadowTexture.repeat.set(70, 70);
+
+            // 3. Curb Textures
+            const createCurbTex = (hexMain, hexAccent) => {
+                const cCanvas = document.createElement('canvas');
+                cCanvas.width = 128;
+                cCanvas.height = 128;
+                const cCtx = cCanvas.getContext('2d');
+                cCtx.fillStyle = hexMain;
+                cCtx.fillRect(0, 0, 128, 128);
+                for (let i = 0; i < 900; i++) {
+                    cCtx.fillStyle = hexAccent;
+                    cCtx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+                }
+                const tex = new THREE.CanvasTexture(cCanvas);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                return tex;
+            };
+            curbRedTexture = createCurbTex('#dc2626', 'rgba(153, 27, 27, 0.35)');
+            curbWhiteTexture = createCurbTex('#f1f5f9', 'rgba(148, 163, 184, 0.35)');
+
+            // 3b. Galvanized Steel Highway Guardrail Texture (W-beam profile & bolts)
+            const grCanvas = document.createElement('canvas');
+            grCanvas.width = 256;
+            grCanvas.height = 128;
+            const grCtx = grCanvas.getContext('2d');
+
+            // Base metallic gradient simulating W-beam waves
+            const grGrad = grCtx.createLinearGradient(0, 0, 0, 128);
+            grGrad.addColorStop(0.0, '#94a3b8');
+            grGrad.addColorStop(0.18, '#e2e8f0');
+            grGrad.addColorStop(0.36, '#64748b');
+            grGrad.addColorStop(0.50, '#475569');
+            grGrad.addColorStop(0.64, '#64748b');
+            grGrad.addColorStop(0.82, '#e2e8f0');
+            grGrad.addColorStop(1.0, '#94a3b8');
+            grCtx.fillStyle = grGrad;
+            grCtx.fillRect(0, 0, 256, 128);
+
+            // Subtle brushed galvanized zinc grain
+            for (let i = 0; i < 1600; i++) {
+                const shade = 150 + Math.floor(Math.random() * 80);
+                grCtx.fillStyle = `rgba(${shade}, ${shade + 4}, ${shade + 10}, 0.18)`;
+                grCtx.fillRect(Math.random() * 256, Math.random() * 128, 6, 2);
+            }
+
+            // Panel seam & splice bolts
+            grCtx.fillStyle = 'rgba(30, 41, 59, 0.55)';
+            grCtx.fillRect(126, 0, 3, 128);
+            [24, 64, 104].forEach(by => {
+                grCtx.fillStyle = '#334155';
+                grCtx.beginPath();
+                grCtx.arc(120, by, 4, 0, Math.PI * 2);
+                grCtx.arc(135, by, 4, 0, Math.PI * 2);
+                grCtx.fill();
+            });
+
+            guardrailSteelTexture = new THREE.CanvasTexture(grCanvas);
+            guardrailSteelTexture.wrapS = THREE.RepeatWrapping;
+            guardrailSteelTexture.wrapT = THREE.RepeatWrapping;
+            guardrailSteelTexture.repeat.set(2, 1);
+
+            // 4. Woody Tree Bark Texture
+            const barkCanvas = document.createElement('canvas');
+            barkCanvas.width = 128;
+            barkCanvas.height = 256;
+            const bCtx = barkCanvas.getContext('2d');
+            bCtx.fillStyle = '#5c3a21';
+            bCtx.fillRect(0, 0, 128, 256);
+            const barkColors = ['#472b16', '#6e472b', '#3b2210', '#785032'];
+            for (let i = 0; i < 1400; i++) {
+                bCtx.fillStyle = barkColors[i % barkColors.length];
+                bCtx.fillRect(Math.random() * 128, Math.random() * 256, 3, 14);
+            }
+            treeBarkTexture = new THREE.CanvasTexture(barkCanvas);
+            treeBarkTexture.wrapS = THREE.RepeatWrapping;
+            treeBarkTexture.wrapT = THREE.RepeatWrapping;
+
+            // 5. Pine Needle Foliage Texture
+            const folCanvas = document.createElement('canvas');
+            folCanvas.width = 256;
+            folCanvas.height = 256;
+            const fCtx = folCanvas.getContext('2d');
+            fCtx.fillStyle = '#1f5c2e';
+            fCtx.fillRect(0, 0, 256, 256);
+            const folColors = ['#164722', '#287039', '#328245', '#133b1c', '#3c9451'];
+            for (let i = 0; i < 6500; i++) {
+                fCtx.fillStyle = folColors[i % folColors.length];
+                fCtx.fillRect(Math.random() * 256, Math.random() * 256, 3, 4);
+            }
+            treeFoliageTexture = new THREE.CanvasTexture(folCanvas);
+            treeFoliageTexture.wrapS = THREE.RepeatWrapping;
+            treeFoliageTexture.wrapT = THREE.RepeatWrapping;
+        }
+
+        // Load saved high score safely
+        try {
+            const saved = localStorage.getItem('miata_runner_best');
+            if (saved) {
+                bestScore = parseInt(saved, 10) || 0;
+                domBest.textContent = bestScore.toLocaleString();
+            }
+        } catch (e) {
+            bestScore = 0;
+        }
+
+        function applyCarColorToGroup() {}
+        function updateLobbyCarColorIndicators() {}
+        function setLocalCarColor() {}
+
+        function initScene() {
+            const container = document.getElementById('canvas-holder');
+
+            initProceduralTextures();
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x7ec8f2);
+            scene.fog = new THREE.FogExp2(0x9dd6f7, 0.0028);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 420);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+            container.appendChild(renderer.domElement);
+
+            clock = new THREE.Clock();
+
+            // Bright Daytime Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            scene.add(ambientLight);
+
+            const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x3b7a2e, 0.85);
+            hemiLight.position.set(0, 80, 0);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.85);
+            dirLight.position.set(40, 75, -45);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.camera.near = 1;
+            dirLight.shadow.camera.far = 180;
+            const d = 40;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            scene.add(dirLight);
+            scene.userData.ambientLight = ambientLight;
+            scene.userData.hemiLight = hemiLight;
+            scene.userData.dirLight = dirLight;
+
+            // Daytime Sky Sun, Clouds & Textured Grass Backdrop
+            createSkyBackdrop();
+        }
+
+        function createSkyBackdrop() {
+            const skyGroup = new THREE.Group();
+
+            // Lower Realistic-sized Sun in the sky so it is clearly visible above the highway horizon
+            const sunPos = new THREE.Vector3(38, 34, -260);
+            const sunGeo = new THREE.SphereGeometry(5.2, 24, 24);
+            const sunMat = new THREE.MeshBasicMaterial({
+                color: 0xfffef0,
+                fog: false
+            });
+            const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+            sunMesh.position.copy(sunPos);
+            skyGroup.add(sunMesh);
+            scene.userData.sunMesh = sunMesh;
+
+            // Soft Solar Corona / Glare Halo around the realistic Sun
+            const glowCanvas = document.createElement('canvas');
+            glowCanvas.width = 128;
+            glowCanvas.height = 128;
+            const glowCtx = glowCanvas.getContext('2d');
+            const grad = glowCanvas.getContext('2d').createRadialGradient(64, 64, 8, 64, 64, 64);
+            grad.addColorStop(0, 'rgba(255, 253, 220, 0.95)');
+            grad.addColorStop(0.35, 'rgba(254, 240, 138, 0.35)');
+            grad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+            glowCtx.fillStyle = grad;
+            glowCtx.fillRect(0, 0, 128, 128);
+
+            const glowTex = new THREE.CanvasTexture(glowCanvas);
+            const glowSpriteMat = new THREE.SpriteMaterial({
+                map: glowTex,
+                transparent: true,
+                fog: false,
+                depthWrite: false
+            });
+            const sunGlow = new THREE.Sprite(glowSpriteMat);
+            sunGlow.scale.set(28, 28, 1);
+            sunGlow.position.copy(sunPos);
+            skyGroup.add(sunGlow);
+            scene.userData.sunGlow = sunGlow;
+
+            // 3D Volumetric-Style Clouds in the Sky
+            const cloudsGroup = new THREE.Group();
+            const cloudMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.95,
+                metalness: 0.0,
+                flatShading: true,
+                fog: false
+            });
+            scene.userData.cloudMat = cloudMat;
+
+            const cloudConfigs = [
+                { x: -75, y: 42, z: -210, scale: 1.3, speed: 1.4 },
+                { x: -18, y: 48, z: -240, scale: 1.6, speed: 1.1 },
+                { x: 58,  y: 44, z: -220, scale: 1.4, speed: 1.3 },
+                { x: 105, y: 50, z: -250, scale: 1.5, speed: 0.95 },
+                { x: -115, y: 46, z: -185, scale: 1.25, speed: 1.5 },
+                { x: 15,  y: 54, z: -175, scale: 1.15, speed: 1.25 },
+                { x: -48, y: 38, z: -155, scale: 1.1, speed: 1.6 },
+                { x: 82,  y: 40, z: -165, scale: 1.2, speed: 1.35 }
+            ];
+
+            const puffGeo = new THREE.DodecahedronGeometry(4.5, 1);
+            cloudConfigs.forEach(cfg => {
+                const cCluster = new THREE.Group();
+                const puffs = [
+                    [0, 0, 0, 1.35, 0.85, 1.0],
+                    [-4.2, -0.6, 0.8, 1.0, 0.7, 0.9],
+                    [4.4, -0.5, -0.5, 1.05, 0.72, 0.9],
+                    [-2.0, 1.4, -0.4, 0.95, 0.75, 0.85],
+                    [2.1, 1.2, 0.6, 0.9, 0.7, 0.85]
+                ];
+                puffs.forEach(p => {
+                    const m = new THREE.Mesh(puffGeo, cloudMat);
+                    m.position.set(p[0], p[1], p[2]);
+                    m.scale.set(p[3], p[4], p[5]);
+                    cCluster.add(m);
+                });
+                cCluster.position.set(cfg.x, cfg.y, cfg.z);
+                cCluster.scale.setScalar(cfg.scale);
+                cCluster.userData.driftSpeed = cfg.speed;
+                cloudsGroup.add(cCluster);
+            });
+            skyGroup.add(cloudsGroup);
+            scene.userData.cloudsGroup = cloudsGroup;
+
+            // Starfield for Night Mode (Hidden during Day Mode)
+            const starCount = 320;
+            const starPositions = new Float32Array(starCount * 3);
+            for (let i = 0; i < starCount; i++) {
+                starPositions[i * 3] = (Math.random() - 0.5) * 460;
+                starPositions[i * 3 + 1] = 22 + Math.random() * 140;
+                starPositions[i * 3 + 2] = -80 - Math.random() * 240;
+            }
+            const starGeo = new THREE.BufferGeometry();
+            starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+            const starMat = new THREE.PointsMaterial({
+                color: 0xf8fafc,
+                size: 1.35,
+                fog: false,
+                transparent: true,
+                opacity: 0.9
+            });
+            const starPoints = new THREE.Points(starGeo, starMat);
+            starPoints.visible = false;
+            skyGroup.add(starPoints);
+            scene.userData.starPoints = starPoints;
+
+            // Textured Daytime Grass Ground Plane (follows player Z & tiles seamlessly)
+            const groundGeo = new THREE.PlaneGeometry(900, 900);
+            const groundMat = new THREE.MeshStandardMaterial({
+                map: grassMeadowTexture,
+                color: 0xffffff,
+                roughness: 0.92,
+                metalness: 0.02
+            });
+            const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+            groundMesh.rotation.x = -Math.PI / 2;
+            groundMesh.position.y = -0.15;
+            groundMesh.receiveShadow = true;
+            skyGroup.add(groundMesh);
+            scene.userData.groundMesh = groundMesh;
+
+            scene.add(skyGroup);
+            scene.userData.skyGroup = skyGroup;
+        }
+
+        function applyDayNightTheme(isNight) {
+            if (!scene) return;
+            const ambient = scene.userData.ambientLight;
+            const hemi = scene.userData.hemiLight;
+            const dir = scene.userData.dirLight;
+            const sunMesh = scene.userData.sunMesh;
+            const sunGlow = scene.userData.sunGlow;
+            const cloudMat = scene.userData.cloudMat;
+            const starPoints = scene.userData.starPoints;
+            const groundMesh = scene.userData.groundMesh;
+
+            if (isNight) {
+                scene.background = new THREE.Color(0x050814);
+                scene.fog = new THREE.FogExp2(0x070c1e, 0.0036);
+                if (ambient) {
+                    ambient.color.setHex(0x93c5fd);
+                    ambient.intensity = 0.26;
+                }
+                if (hemi) {
+                    hemi.color.setHex(0x1e293b);
+                    hemi.groundColor.setHex(0x090d16);
+                    hemi.intensity = 0.32;
+                }
+                if (dir) {
+                    dir.color.setHex(0xcbd5e1);
+                    dir.intensity = 0.52;
+                }
+                if (sunMesh) sunMesh.material.color.setHex(0xe2e8f0);
+                if (sunGlow) {
+                    sunGlow.material.color.setHex(0x93c5fd);
+                    sunGlow.scale.set(20, 20, 1);
+                }
+                if (cloudMat) cloudMat.color.setHex(0x1e293b);
+                if (starPoints) starPoints.visible = true;
+                if (groundMesh) groundMesh.material.color.setHex(0x475569);
+                if (scene.userData.leftBeam) scene.userData.leftBeam.intensity = 4.2;
+                if (scene.userData.rightBeam) scene.userData.rightBeam.intensity = 4.2;
+            } else {
+                scene.background = new THREE.Color(0x7ec8f2);
+                scene.fog = new THREE.FogExp2(0x9dd6f7, 0.0028);
+                if (ambient) {
+                    ambient.color.setHex(0xffffff);
+                    ambient.intensity = 0.9;
+                }
+                if (hemi) {
+                    hemi.color.setHex(0xbae6fd);
+                    hemi.groundColor.setHex(0x3b7a2e);
+                    hemi.intensity = 0.85;
+                }
+                if (dir) {
+                    dir.color.setHex(0xfffbeb);
+                    dir.intensity = 1.85;
+                }
+                if (sunMesh) sunMesh.material.color.setHex(0xfffef0);
+                if (sunGlow) {
+                    sunGlow.material.color.setHex(0xffffff);
+                    sunGlow.scale.set(28, 28, 1);
+                }
+                if (cloudMat) cloudMat.color.setHex(0xffffff);
+                if (starPoints) starPoints.visible = false;
+                if (groundMesh) groundMesh.material.color.setHex(0xffffff);
+                if (scene.userData.leftBeam) scene.userData.leftBeam.intensity = 2.2;
+                if (scene.userData.rightBeam) scene.userData.rightBeam.intensity = 2.2;
+            }
+        }
+
+        function createPlayerBadgeSprite(text, bgHex, borderHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = bgHex;
+            ctx.strokeStyle = borderHex;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.roundRect(8, 8, 240, 48, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Orbitron, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 33);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(2.8, 0.7, 1);
+            sprite.position.set(0, 2.35, 0);
+            return sprite;
+        }
+
+        function createPlayerAndLoadMiata() {
+            // 1. Local Player Group
+            playerGroup = new THREE.Group();
+            carVisualGroup = new THREE.Group();
+            playerGroup.add(carVisualGroup);
+            scene.add(playerGroup);
+
+            fallbackCarMesh = buildFallbackCarMesh(localCarColor, false);
+            carVisualGroup.add(fallbackCarMesh);
+            applyCarColorToGroup(playerGroup, localCarColor);
+
+            // Add Headlight Beams to Local Player Car
+            const leftBeam = new THREE.SpotLight(0xfffbeb, 2.2, 55, Math.PI / 4.5, 0.5, 1.1);
+            leftBeam.position.set(-0.7, 0.65, -1.7);
+            leftBeam.target.position.set(-0.7, 0.1, -26);
+            carVisualGroup.add(leftBeam);
+            carVisualGroup.add(leftBeam.target);
+
+            const rightBeam = new THREE.SpotLight(0xfffbeb, 2.2, 55, Math.PI / 4.5, 0.5, 1.1);
+            rightBeam.position.set(0.7, 0.65, -1.7);
+            rightBeam.target.position.set(0.7, 0.1, -26);
+            carVisualGroup.add(rightBeam);
+            carVisualGroup.add(rightBeam.target);
+
+            scene.userData.leftBeam = leftBeam;
+            scene.userData.rightBeam = rightBeam;
+
+            // 2. Remote Online Player Group (Side-by-Side Second Player Car)
+            remotePlayerGroup = new THREE.Group();
+            remoteCarVisualGroup = new THREE.Group();
+            remotePlayerGroup.add(remoteCarVisualGroup);
+            remoteFallbackCarMesh = buildFallbackCarMesh(0x0284c7, true);
+            remoteCarVisualGroup.add(remoteFallbackCarMesh);
+
+            const remoteBadge = createPlayerBadgeSprite('PLAYER 2', 'rgba(15, 23, 42, 0.85)', '#38bdf8');
+            remoteBadge.name = 'remoteBadge';
+            remotePlayerGroup.add(remoteBadge);
+            remotePlayerGroup.visible = false;
+            scene.add(remotePlayerGroup);
+
+            // 3. Auto-load mazda_miata_mx-5.glb & toyota_camry_2020.glb sitting next to index.html in the itch.io zip bundle
+            loadMiataFromBundle([
+                './mazda_miata_mx-5.glb',
+                'mazda_miata_mx-5.glb',
+                './Mazda_Miata_MX-5.glb',
+                'Mazda_Miata_MX-5.glb',
+                './miata.glb',
+                'miata.glb',
+                './Miata.glb',
+                'Miata.glb',
+                './mx5.glb',
+                './mazda_miata.glb'
+            ]);
+
+            loadToyotaFromBundle([
+                './toyota_camry_2020.glb',
+                'toyota_camry_2020.glb',
+                './Toyota_Camry_2020.glb',
+                'Toyota_Camry_2020.glb',
+                './toyota.glb',
+                'toyota.glb',
+                './camry.glb',
+                'camry.glb',
+                './Toyota.glb',
+                './Camry.glb',
+                './toyota_camry.glb'
+            ]);
+        }
+
+        function buildFallbackCarMesh(primaryColor = 0xdc2626, isRemote = false) {
+            const group = new THREE.Group();
+            const wheelList = [];
+
+            // Main lower chassis box (sporty Miata silhouette details)
+            const bodyGeo = new THREE.BoxGeometry(1.9, 0.55, 4.0);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: primaryColor,
+                roughness: 0.25,
+                metalness: 0.6
+            });
+            bodyMat.userData.isCarPaint = true;
+            const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            bodyMesh.position.y = 0.52;
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            group.add(bodyMesh);
+
+            // Cabin / Windshield top box
+            const cabinGeo = new THREE.BoxGeometry(1.55, 0.42, 1.85);
+            const cabinMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                roughness: 0.15,
+                metalness: 0.8
+            });
+            const cabinMesh = new THREE.Mesh(cabinGeo, cabinMat);
+            cabinMesh.position.set(0, 0.95, 0.25);
+            cabinMesh.castShadow = true;
+            group.add(cabinMesh);
+
+            // Pop-up Headlights
+            const popGeo = new THREE.BoxGeometry(0.32, 0.18, 0.35);
+            const popMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness: 0.3 });
+            popMat.userData.isCarPaint = true;
+            const popL = new THREE.Mesh(popGeo, popMat);
+            popL.position.set(-0.62, 0.82, -1.65);
+            group.add(popL);
+            const popR = new THREE.Mesh(popGeo, popMat);
+            popR.position.set(0.62, 0.82, -1.65);
+            group.add(popR);
+
+            // Glowing Taillights
+            const tailGeo = new THREE.BoxGeometry(0.42, 0.16, 0.1);
+            const tailMat = new THREE.MeshBasicMaterial({ color: 0xff1111 });
+            const tailL = new THREE.Mesh(tailGeo, tailMat);
+            tailL.position.set(-0.62, 0.58, 2.01);
+            group.add(tailL);
+            const tailR = new THREE.Mesh(tailGeo, tailMat);
+            tailR.position.set(0.62, 0.58, 2.01);
+            group.add(tailR);
+
+            // 4 Wheels
+            const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 16);
+            wheelGeo.rotateZ(Math.PI / 2);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8 });
+            const wheelPositions = [
+                [-0.95, 0.36, -1.25],
+                [0.95, 0.36, -1.25],
+                [-0.95, 0.36, 1.25],
+                [0.95, 0.36, 1.25]
+            ];
+            wheelPositions.forEach(pos => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.position.set(pos[0], pos[1], pos[2]);
+                w.castShadow = true;
+                group.add(w);
+                wheelList.push(w);
+            });
+
+            if (isRemote) {
+                remoteFallbackWheels = wheelList;
+            } else {
+                fallbackWheels = wheelList;
+            }
+
+            // Scale 1/3 bigger around y = 0 so wheels stay flush with the road
+            group.scale.setScalar(CAR_SCALE);
+
+            return group;
+        }
+
+        function loadMiataFromBundle(candidates, index = 0) {
+            if (!THREE.GLTFLoader || index >= candidates.length) {
+                miataSettled = true;
+                updateModelStatusUI();
+                checkAndDismissLoadingScreen();
+                return;
+            }
+
+            const url = candidates[index];
+            const loader = createConfiguredGLTFLoader();
+
+            try {
+                loader.load(
+                    url,
+                    function (gltf) {
+                        applyLoadedMiataModel(gltf.scene);
+                    },
+                    undefined,
+                    function () {
+                        // Try next candidate filename in the zip bundle
+                        loadMiataFromBundle(candidates, index + 1);
+                    }
+                );
+            } catch (err) {
+                loadMiataFromBundle(candidates, index + 1);
+            }
+        }
+
+        function applyLoadedMiataModel(gltfScene) {
+            // Remove previous loaded model if any
+            if (loadedMiataModel) {
+                carVisualGroup.remove(loadedMiataModel);
+            }
+
+            const model = gltfScene;
+
+            // Ensure all meshes cast/receive shadows and have well-lit materials
+            model.traverse(function (child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        // Boost material visibility if metallic surfaces lack an envMap
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach(mat => {
+                            if (mat.metalness !== undefined && mat.metalness > 0.65) {
+                                mat.metalness = 0.45;
+                            }
+                            if (mat.roughness !== undefined && mat.roughness < 0.15) {
+                                mat.roughness = 0.22;
+                            }
+                            mat.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+
+            // Reset transforms before measuring bounding box
+            model.position.set(0, 0, 0);
+            model.rotation.set(0, 0, 0);
+            model.scale.set(1, 1, 1);
+            model.updateMatrixWorld(true);
+
+            // Compute initial bounding box of the uploaded Miata model
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+
+            // Determine orientation: In the uploaded Sketchfab Miata .glb, Z is the length (~4.4m) and +Z is the front of the car.
+            // Since the player drives towards -Z in Three.js, we rotate the model 180 degrees around Y (Math.PI) so the front faces -Z!
+            if (size.x > size.z) {
+                model.rotation.y = -Math.PI / 2;
+            } else {
+                model.rotation.y = Math.PI;
+            }
+            model.updateMatrixWorld(true);
+
+            // Recompute bounding box after rotation to scale and center accurately
+            const rotatedBox = new THREE.Box3().setFromObject(model);
+            const rotatedSize = new THREE.Vector3();
+            rotatedBox.getSize(rotatedSize);
+
+            const maxDim = Math.max(rotatedSize.x, rotatedSize.y, rotatedSize.z, 0.001);
+            const targetLength = 4.2 * CAR_SCALE; // 1/3 bigger while matching game track scale
+            const scaleFactor = targetLength / maxDim;
+            model.scale.setScalar(scaleFactor);
+            model.updateMatrixWorld(true);
+            // Center X and Z, and place bottom of tires firmly on the road surface
+            const finalBox = new THREE.Box3().setFromObject(model);
+            const finalCenter = new THREE.Vector3();
+            finalBox.getCenter(finalCenter);
+
+            model.position.x -= finalCenter.x;
+            model.position.z -= finalCenter.z;
+            // Scale the ground-clearance offset by CAR_SCALE so the tires stay at the exact same road level
+            model.position.y -= (finalBox.min.y + 1.55 * CAR_SCALE);
+
+            loadedMiataModel = model;
+            carVisualGroup.add(loadedMiataModel);
+
+            // Also clone the calibrated Miata model for the second online player car
+            if (remoteCarVisualGroup) {
+                if (remoteLoadedMiataModel) {
+                    remoteCarVisualGroup.remove(remoteLoadedMiataModel);
+                }
+                remoteLoadedMiataModel = loadedMiataModel.clone();
+                remoteCarVisualGroup.add(remoteLoadedMiataModel);
+                if (remoteFallbackCarMesh) {
+                    remoteFallbackCarMesh.visible = false;
+                }
+            }
+
+            // Hide fallback mesh now that the real Miata is ready
+            if (fallbackCarMesh) {
+                fallbackCarMesh.visible = false;
+            }
+
+            miataLoadedFlag = true;
+            miataSettled = true;
+            updateModelStatusUI();
+            checkAndDismissLoadingScreen();
+        }
+
+        function loadToyotaFromBundle(candidates, index = 0) {
+            if (!THREE.GLTFLoader || index >= candidates.length) {
+                toyotaSettled = true;
+                updateModelStatusUI();
+                checkAndDismissLoadingScreen();
+                return;
+            }
+
+            const url = candidates[index];
+            const loader = createConfiguredGLTFLoader();
+
+            try {
+                loader.load(
+                    url,
+                    function (gltf) {
+                        applyLoadedToyotaModel(gltf.scene);
+                    },
+                    undefined,
+                    function () {
+                        // Try next candidate filename in the zip bundle
+                        loadToyotaFromBundle(candidates, index + 1);
+                    }
+                );
+            } catch (err) {
+                loadToyotaFromBundle(candidates, index + 1);
+            }
+        }
+
+        function applyLoadedToyotaModel(gltfScene) {
+            const wrapper = new THREE.Group();
+            const model = gltfScene;
+
+            model.traverse(function (child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach(mat => {
+                            if (mat.metalness !== undefined && mat.metalness > 0.65) {
+                                mat.metalness = 0.45;
+                            }
+                            if (mat.roughness !== undefined && mat.roughness < 0.15) {
+                                mat.roughness = 0.22;
+                            }
+                            mat.needsUpdate = true;
+                        });
+                    }
+                }
+            });
+
+            model.position.set(0, 0, 0);
+            model.rotation.set(0, 0, 0);
+            model.scale.set(1, 1, 1);
+            model.updateMatrixWorld(true);
+
+            // Measure raw bounding box of the uploaded Toyota Camry 2020 model
+            const box = new THREE.Box3().setFromObject(model);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+
+            // Rotate 180 degrees around Y so the Toyota Camry faces forward (-Z) in the same direction as traffic
+            if (size.x > size.z) {
+                model.rotation.y = -Math.PI / 2;
+            } else {
+                model.rotation.y = Math.PI;
+            }
+            model.updateMatrixWorld(true);
+
+            const rotatedBox = new THREE.Box3().setFromObject(model);
+            const rotatedSize = new THREE.Vector3();
+            rotatedBox.getSize(rotatedSize);
+
+            const maxDim = Math.max(rotatedSize.x, rotatedSize.y, rotatedSize.z, 0.001);
+            const targetLength = 4.4 * CAR_SCALE; // 1/3 bigger Camry sedan length
+            const scaleFactor = targetLength / maxDim;
+            model.scale.setScalar(scaleFactor);
+            model.updateMatrixWorld(true);
+
+            const finalBox = new THREE.Box3().setFromObject(model);
+            const finalCenter = new THREE.Vector3();
+            finalBox.getCenter(finalCenter);
+
+            model.position.x -= finalCenter.x;
+            model.position.z -= finalCenter.z;
+            // Place the Toyota Camry's tires flush on the road surface (y = 0)
+            model.position.y -= finalBox.min.y;
+
+            wrapper.add(model);
+            loadedToyotaTemplate = wrapper;
+            toyotaLoadedFlag = true;
+            toyotaSettled = true;
+            updateModelStatusUI();
+            checkAndDismissLoadingScreen();
+
+            // Immediately upgrade all active traffic cars on the track to use the loaded Toyota Camry GLB
+            trafficCars.forEach(car => {
+                if (car.visualContainer) {
+                    while (car.visualContainer.children.length > 0) {
+                        car.visualContainer.remove(car.visualContainer.children[0]);
+                    }
+                    car.visualContainer.add(loadedToyotaTemplate.clone());
+                }
+            });
+        }
+
+        function buildFallbackToyotaMesh() {
+            const group = new THREE.Group();
+
+            // Sleek White/Silver Sedan Body (Fallback for Toyota Camry 2020)
+            const bodyGeo = new THREE.BoxGeometry(1.95, 0.58, 4.4);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: 0xf1f5f9,
+                roughness: 0.25,
+                metalness: 0.5
+            });
+            const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            bodyMesh.position.y = 0.54;
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            group.add(bodyMesh);
+
+            // Sedan Cabin Roof
+            const cabinGeo = new THREE.BoxGeometry(1.62, 0.46, 2.2);
+            const cabinMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                roughness: 0.15,
+                metalness: 0.8
+            });
+            const cabinMesh = new THREE.Mesh(cabinGeo, cabinMat);
+            cabinMesh.position.set(0, 1.02, 0.1);
+            cabinMesh.castShadow = true;
+            group.add(cabinMesh);
+
+            // Glowing Red Taillights (visible from behind as player approaches at higher speed)
+            const tailGeo = new THREE.BoxGeometry(0.48, 0.16, 0.1);
+            const tailMat = new THREE.MeshBasicMaterial({ color: 0xff1111 });
+            const tailL = new THREE.Mesh(tailGeo, tailMat);
+            tailL.position.set(-0.65, 0.64, 2.21);
+            group.add(tailL);
+            const tailR = new THREE.Mesh(tailGeo, tailMat);
+            tailR.position.set(0.65, 0.64, 2.21);
+            group.add(tailR);
+
+            // Front Headlights (facing -Z)
+            const headGeo = new THREE.BoxGeometry(0.42, 0.14, 0.1);
+            const headMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+            const headL = new THREE.Mesh(headGeo, headMat);
+            headL.position.set(-0.68, 0.58, -2.21);
+            group.add(headL);
+            const headR = new THREE.Mesh(headGeo, headMat);
+            headR.position.set(0.68, 0.58, -2.21);
+            group.add(headR);
+
+            // 4 Wheels
+            const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 14);
+            wheelGeo.rotateZ(Math.PI / 2);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+            [
+                [-0.98, 0.36, -1.35],
+                [0.98, 0.36, -1.35],
+                [-0.98, 0.36, 1.35],
+                [0.98, 0.36, 1.35]
+            ].forEach(pos => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.position.set(pos[0], pos[1], pos[2]);
+                w.castShadow = true;
+                group.add(w);
+            });
+
+            // Scale 1/3 bigger around y = 0 so wheels stay flush with the road
+            group.scale.setScalar(CAR_SCALE);
+
+            return group;
+        }
+
+        function createTrafficCarMesh() {
+            const container = new THREE.Group();
+            const visualContainer = new THREE.Group();
+            container.add(visualContainer);
+
+            if (loadedToyotaTemplate) {
+                visualContainer.add(loadedToyotaTemplate.clone());
+            } else {
+                visualContainer.add(buildFallbackToyotaMesh());
+            }
+
+            return { container, visualContainer };
+        }
+
+        function createTrackSegment(index, startCenterX, endCenterX, spawnObstacles) {
+            const segGroup = new THREE.Group();
+            const zStart = -index * SEGMENT_LENGTH;
+            const zEnd = -(index + 1) * SEGMENT_LENGTH;
+            const zMid = (zStart + zEnd) / 2;
+            const midCenterX = (startCenterX + endCenterX) / 2;
+            const dx = endCenterX - startCenterX;
+            const segAngleY = Math.atan2(-dx, SEGMENT_LENGTH);
+            const segHypotenuse = Math.hypot(SEGMENT_LENGTH, dx);
+
+            segGroup.position.set(midCenterX, 0, zMid);
+
+            // 1. Textured Road Surface Mesh
+            const roadGeo = new THREE.BoxGeometry(TRACK_WIDTH, 0.2, segHypotenuse + 0.35);
+            const isEven = index % 2 === 0;
+            const roadMat = new THREE.MeshStandardMaterial({
+                map: roadAsphaltTexture,
+                color: isEven ? 0xffffff : 0xf1f5f9,
+                roughness: 0.82,
+                metalness: 0.08
+            });
+            const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+            roadMesh.position.y = -0.1;
+            roadMesh.rotation.y = segAngleY;
+            roadMesh.receiveShadow = true;
+            segGroup.add(roadMesh);
+
+            // 2. 3D Metallic Highway Guardrails on Left and Right Edges
+            const railLength = segHypotenuse + 0.35;
+            const railMat = new THREE.MeshStandardMaterial({
+                map: guardrailSteelTexture,
+                color: 0xdbeafe,
+                roughness: 0.34,
+                metalness: 0.68
+            });
+            const postMat = new THREE.MeshStandardMaterial({
+                color: 0x475569,
+                roughness: 0.5,
+                metalness: 0.6
+            });
+            const reflectorLeftMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+            const reflectorRightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+
+            // Shared geometries for this segment's left and right guardrails
+            const railChannelGeo = new THREE.BoxGeometry(0.14, 0.52, railLength);
+            const railRidgeGeo = new THREE.BoxGeometry(0.24, 0.17, railLength);
+            const postGeo = new THREE.BoxGeometry(0.22, 1.18, 0.24);
+            const reflectorGeo = new THREE.BoxGeometry(0.06, 0.14, 0.26);
+
+            [-1, 1].forEach(side => {
+                const guardrailSideGroup = new THREE.Group();
+                const edgeX = side * (TRACK_WIDTH / 2 + 0.35);
+                guardrailSideGroup.position.set(edgeX, 0, 0);
+                guardrailSideGroup.rotation.y = segAngleY;
+
+                // Inner face offset so the W-beam waves face toward the highway lanes
+                const inwardDir = -side;
+
+                // Recessed center steel channel of the W-beam
+                const centerBeam = new THREE.Mesh(railChannelGeo, railMat);
+                centerBeam.position.set(inwardDir * 0.04, 0.78, 0);
+                centerBeam.castShadow = true;
+                centerBeam.receiveShadow = true;
+                guardrailSideGroup.add(centerBeam);
+
+                // Upper corrugated wave ridge
+                const topRidge = new THREE.Mesh(railRidgeGeo, railMat);
+                topRidge.position.set(inwardDir * 0.09, 0.96, 0);
+                topRidge.castShadow = true;
+                topRidge.receiveShadow = true;
+                guardrailSideGroup.add(topRidge);
+
+                // Lower corrugated wave ridge
+                const bottomRidge = new THREE.Mesh(railRidgeGeo, railMat);
+                bottomRidge.position.set(inwardDir * 0.09, 0.60, 0);
+                bottomRidge.castShadow = true;
+                bottomRidge.receiveShadow = true;
+                guardrailSideGroup.add(bottomRidge);
+
+                // Steel support posts anchored behind the W-beam rail
+                [-SEGMENT_LENGTH * 0.25, SEGMENT_LENGTH * 0.25].forEach((postZ, pIdx) => {
+                    const postMesh = new THREE.Mesh(postGeo, postMat);
+                    postMesh.position.set(side * 0.10, 0.54, postZ);
+                    postMesh.castShadow = true;
+                    postMesh.receiveShadow = true;
+                    guardrailSideGroup.add(postMesh);
+
+                    // Highway safety reflector tab mounted in the W-beam channel
+                    if (pIdx === 0) {
+                        const reflector = new THREE.Mesh(
+                            reflectorGeo,
+                            side === -1 ? reflectorLeftMat : reflectorRightMat
+                        );
+                        reflector.position.set(inwardDir * 0.13, 0.78, postZ);
+                        guardrailSideGroup.add(reflector);
+                    }
+                });
+
+                segGroup.add(guardrailSideGroup);
+            });
+
+            // 3. Dashed Lane Markings
+            if (isEven) {
+                const dashGeo = new THREE.PlaneGeometry(0.25, SEGMENT_LENGTH * 0.55);
+                const dashMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+                [-TRACK_WIDTH / 6, TRACK_WIDTH / 6].forEach(laneOffset => {
+                    const dash = new THREE.Mesh(dashGeo, dashMat);
+                    dash.rotation.x = -Math.PI / 2;
+                    dash.rotation.z = segAngleY;
+                    dash.position.set(laneOffset, 0.02, 0);
+                    segGroup.add(dash);
+                });
+            }
+
+            // 4. Dense Roadside Forest (Pine trees & bushes on both sides of the track)
+            [-1, 1].forEach((side, sIdx) => {
+                const r1 = seededRandom(matchSeed + index * 31 + sIdx * 7);
+                const r2 = seededRandom(matchSeed + index * 37 + sIdx * 11);
+                const r3 = seededRandom(matchSeed + index * 41 + sIdx * 13);
+                const r4 = seededRandom(matchSeed + index * 43 + sIdx * 17);
+                const r5 = seededRandom(matchSeed + index * 47 + sIdx * 19);
+                const r6 = seededRandom(matchSeed + index * 53 + sIdx * 23);
+
+                // Inner treeline near the road edge
+                const nearOffset = side * (TRACK_WIDTH / 2 + 3.8 + r1 * 4.5);
+                const nearZ = (r2 - 0.5) * SEGMENT_LENGTH * 0.8;
+                const nearScale = 0.85 + r3 * 0.55;
+                const nearTree = createRoadsideTree(nearScale);
+                nearTree.position.set(nearOffset, 0, nearZ);
+                segGroup.add(nearTree);
+
+                // Outer woodland layer for depth
+                const farOffset = side * (TRACK_WIDTH / 2 + 11.0 + r4 * 16.0);
+                const farZ = (r5 - 0.5) * SEGMENT_LENGTH * 0.9;
+                const farScale = 1.0 + r6 * 0.8;
+                const farTree = createRoadsideTree(farScale);
+                farTree.position.set(farOffset, 0, farZ);
+                segGroup.add(farTree);
+            });
+
+            // 5. Moving Toyota Traffic Cars Spawning (Synchronized via matchSeed for Online Mode)
+            const spawnRoll = seededRandom(matchSeed + index * 97);
+            if (spawnObstacles && index > 10 && index % TRAFFIC_ROW_INTERVAL === 0 && spawnRoll < 0.65) {
+                const countRoll = seededRandom(matchSeed + index * 101);
+                const numCars = (index > 65 && countRoll < 0.25) ? 2 : 1;
+                // Exact centers of the 3 lanes (Left: -TRACK_WIDTH/3, Middle: 0, Right: +TRACK_WIDTH/3)
+                const lanes = [-LANE_SPACING, 0, LANE_SPACING];
+                // Deterministic Fisher-Yates shuffle based on matchSeed + index
+                for (let j = lanes.length - 1; j > 0; j--) {
+                    const k = Math.floor(seededRandom(matchSeed + index * 109 + j * 29) * (j + 1));
+                    const temp = lanes[j];
+                    lanes[j] = lanes[k];
+                    lanes[k] = temp;
+                }
+
+                for (let i = 0; i < numCars; i++) {
+                    const localX = lanes[i];
+                    const carObj = createTrafficCarMesh();
+                    const worldX = midCenterX + localX;
+                    const worldZ = zMid;
+
+                    carObj.container.position.set(worldX, 0, worldZ);
+                    carObj.container.rotation.y = segAngleY;
+                    scene.add(carObj.container);
+
+                    trafficCars.push({
+                        mesh: carObj.container,
+                        visualContainer: carObj.visualContainer,
+                        localX: localX,
+                        worldX: worldX,
+                        worldZ: worldZ,
+                        speed: TRAFFIC_SPEED, // Constant 50 MPH forward speed
+                        halfWidth: CAMRY_HALF_W * CAR_SCALE, // Slightly thinner width-wise hitbox
+                        halfDepth: CAMRY_HALF_L * CAR_SCALE,
+                        hit: false
+                    });
+                }
+            }
+
+            scene.add(segGroup);
+
+            return {
+                index,
+                group: segGroup,
+                zStart,
+                zEnd,
+                zMid,
+                startCenterX,
+                endCenterX,
+                midCenterX
+            };
+        }
+
+        function createRoadsideTree(scale = 1) {
+            const g = new THREE.Group();
+
+            // Textured Tree Trunk
+            const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 1.9, 9);
+            const trunkMat = new THREE.MeshStandardMaterial({
+                map: treeBarkTexture,
+                color: 0xffffff,
+                roughness: 0.92
+            });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 0.95;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            g.add(trunk);
+
+            // Textured Layered Pine / Conifer Foliage
+            const foliageMat = new THREE.MeshStandardMaterial({
+                map: treeFoliageTexture,
+                color: Math.random() > 0.45 ? 0xffffff : 0xd9f99d,
+                roughness: 0.82
+            });
+
+            const tier1Geo = new THREE.ConeGeometry(1.8, 2.7, 9);
+            const tier1 = new THREE.Mesh(tier1Geo, foliageMat);
+            tier1.position.y = 2.6;
+            tier1.castShadow = true;
+            tier1.receiveShadow = true;
+            g.add(tier1);
+
+            const tier2Geo = new THREE.ConeGeometry(1.4, 2.3, 9);
+            const tier2 = new THREE.Mesh(tier2Geo, foliageMat);
+            tier2.position.y = 4.05;
+            tier2.castShadow = true;
+            tier2.receiveShadow = true;
+            g.add(tier2);
+
+            const tier3Geo = new THREE.ConeGeometry(0.95, 1.8, 9);
+            const tier3 = new THREE.Mesh(tier3Geo, foliageMat);
+            tier3.position.y = 5.25;
+            tier3.castShadow = true;
+            tier3.receiveShadow = true;
+            g.add(tier3);
+
+            g.scale.setScalar(scale);
+            return g;
+        }
+
+        function spawnNextTrackSegment(allowObstacles = true) {
+            // Periodically vary the curvature target deterministically using matchSeed so both online players see identical curves
+            if (nextSegmentIndex > 4 && nextSegmentIndex % 10 === 0) {
+                const maxTurnRate = 1.6;
+                const turnRoll = seededRandom(matchSeed + nextSegmentIndex * 73);
+                targetTrackSlopeX = (turnRoll - 0.5) * 2 * maxTurnRate;
+                // Keep track from drifting too far from world origin X
+                if (currentTrackCenterX > 24) targetTrackSlopeX = -Math.abs(targetTrackSlopeX) - 0.5;
+                if (currentTrackCenterX < -24) targetTrackSlopeX = Math.abs(targetTrackSlopeX) + 0.5;
+            }
+
+            // Smoothly interpolate slope
+            currentTrackSlopeX += (targetTrackSlopeX - currentTrackSlopeX) * 0.18;
+            const startX = currentTrackCenterX;
+            const endX = nextSegmentIndex < 4 ? 0 : startX + currentTrackSlopeX;
+            currentTrackCenterX = endX;
+
+            const seg = createTrackSegment(nextSegmentIndex, startX, endX, allowObstacles);
+            trackSegments.push(seg);
+            nextSegmentIndex++;
+        }
+
+        function disposeSegment(seg) {
+            scene.remove(seg.group);
+            seg.group.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
+            });
+        }
+
+        function resetTrack() {
+            // Clear existing segments
+            trackSegments.forEach(disposeSegment);
+            trackSegments = [];
+
+            // Clear existing moving traffic cars
+            trafficCars.forEach(car => {
+                scene.remove(car.mesh);
+            });
+            trafficCars = [];
+
+            nextSegmentIndex = 0;
+            currentTrackCenterX = 0;
+            currentTrackSlopeX = 0;
+            targetTrackSlopeX = 0;
+
+            for (let i = 0; i < VISIBLE_SEGMENTS; i++) {
+                spawnNextTrackSegment(i > 5);
+            }
+        }
+
+        function getTrackCenterAtZ(z) {
+            if (trackSegments.length === 0) return 0;
+            for (let i = 0; i < trackSegments.length; i++) {
+                const seg = trackSegments[i];
+                if (z <= seg.zStart && z >= seg.zEnd) {
+                    const t = (seg.zStart - z) / SEGMENT_LENGTH;
+                    return seg.startCenterX + (seg.endCenterX - seg.startCenterX) * t;
+                }
+            }
+            // Extrapolate smoothly if a traffic car drives slightly ahead of the generated segments
+            const lastSeg = trackSegments[trackSegments.length - 1];
+            if (z < lastSeg.zEnd) {
+                return lastSeg.endCenterX;
+            }
+            return trackSegments[0].startCenterX;
+        }
+
+        function getTrackAngleAtZ(z) {
+            if (trackSegments.length === 0) return 0;
+            for (let i = 0; i < trackSegments.length; i++) {
+                const seg = trackSegments[i];
+                if (z <= seg.zStart && z >= seg.zEnd) {
+                    const dx = seg.endCenterX - seg.startCenterX;
+                    return Math.atan2(-dx, SEGMENT_LENGTH);
+                }
+            }
+            const lastSeg = trackSegments[trackSegments.length - 1];
+            const dx = lastSeg.endCenterX - lastSeg.startCenterX;
+            return Math.atan2(-dx, SEGMENT_LENGTH);
+        }
+
+        function checkOBBIntersection(x1, z1, yaw1, hw1, hd1, x2, z2, yaw2, hw2, hd2) {
+            // Compute local right (u) and forward/back (v) unit vectors in (X, Z) plane for both cars
+            const cos1 = Math.cos(yaw1);
+            const sin1 = Math.sin(yaw1);
+            const u1x = cos1, u1z = -sin1;
+            const v1x = sin1, v1z = cos1;
+
+            const cos2 = Math.cos(yaw2);
+            const sin2 = Math.sin(yaw2);
+            const u2x = cos2, u2z = -sin2;
+            const v2x = sin2, v2z = cos2;
+
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+
+            // Test all 4 separating axes (A's right & forward axes, B's right & forward axes)
+            const axes = [
+                [u1x, u1z],
+                [v1x, v1z],
+                [u2x, u2z],
+                [v2x, v2z]
+            ];
+
+            for (let i = 0; i < 4; i++) {
+                const ax = axes[i][0];
+                const az = axes[i][1];
+
+                const distProj = Math.abs(dx * ax + dz * az);
+                const r1 = hw1 * Math.abs(u1x * ax + u1z * az) + hd1 * Math.abs(v1x * ax + v1z * az);
+                const r2 = hw2 * Math.abs(u2x * ax + u2z * az) + hd2 * Math.abs(v2x * ax + v2z * az);
+
+                if (distProj > r1 + r2) {
+                    return false; // Separated along this axis
+                }
+            }
+            return true;
+        }
+
+        function lateralClearShift(x1, z1, yaw1, hw1, hd1, x2, z2, yaw2, hw2, hd2, dir) {
+            // Smallest sideways shift (world X, direction dir = +1/-1) that moves car 1 fully clear of car 2,
+            // using the cars' current (yawed) hitboxes. Used to resolve player-vs-player bumps.
+            let lo = 0;
+            let hi = Math.hypot(hw1, hd1) + Math.hypot(hw2, hd2) + Math.abs(x1 - x2) + 1; // always far enough to be clear
+            for (let i = 0; i < 16; i++) {
+                const mid = (lo + hi) / 2;
+                if (checkOBBIntersection(x1 + dir * mid, z1, yaw1, hw1, hd1, x2, z2, yaw2, hw2, hd2)) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            return hi;
+        }
+
+        function generateRandomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 5; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        }
+
+        function sendPeerPacket(payload) {
+            if (peerConn && peerConn.open) {
+                try {
+                    peerConn.send(payload);
+                } catch (e) {}
+            }
+            // Also send over WSS Relay so cross-device connections behind strict NATs stay in sync
+            WSSRelayBridge.send(payload);
+        }
+
+        function syncStateToNetwork(forceImmediate = false) {
+            if (!isOnlineMode || !roomCode) return;
+
+            const statePacket = {
+                type: 'STATE',
+                matchId: currentMatchId,
+                seed: matchSeed,
+                collision: playerCollisionEnabled,
+                nightMode: nightModeEnabled,
+                color: localCarColor,
+                offset: Number(playerOffset.toFixed(3)),
+                z: Number(playerZ.toFixed(2)),
+                velX: Number(playerVelX.toFixed(2)),
+                steerAngle: Number(currentSteerAngle.toFixed(3)),
+                speed: Number(currentSpeed.toFixed(1)),
+                distance: distanceScore,
+                crashed: localCrashed,
+                crashReason: localCrashReason
+            };
+
+            if (peerConn && peerConn.open) {
+                try {
+                    peerConn.send(statePacket);
+                } catch (e) {}
+            }
+
+            const now = performance.now();
+            // Send ~25Hz over WSS Relay (or immediately on crash/start) so cross-device movement is smooth
+            if (forceImmediate || now - lastRelaySyncTime > 40) {
+                lastRelaySyncTime = now;
+                WSSRelayBridge.send(statePacket);
+            }
+
+            if (forceImmediate || now - lastCloudSyncTime > 120) {
+                lastCloudSyncTime = now;
+                if (window.CloudBridge) {
+                    const fieldPrefix = isHost ? 'p1' : 'p2';
+                    window.CloudBridge.updateCloudRoom(roomCode, {
+                        [`${fieldPrefix}State`]: {
+                            matchId: currentMatchId,
+                            color: localCarColor,
+                            offset: Number(playerOffset.toFixed(2)),
+                            z: Number(playerZ.toFixed(2)),
+                            velX: Number(playerVelX.toFixed(2)),
+                            steerAngle: Number(currentSteerAngle.toFixed(3)),
+                            speed: Number(currentSpeed.toFixed(1)),
+                            distance: distanceScore,
+                            crashed: localCrashed,
+                            crashReason: localCrashReason,
+                            updatedAt: Date.now()
+                        }
+                    });
+                }
+            }
+        }
+
+        function applyIncomingRemoteState(st) {
+            if (!st) return;
+
+            if (typeof st.color === 'string' && st.color !== remoteState.color) {
+                remoteState.color = st.color;
+                if (!isHost) hostLobbyColor = st.color;
+                applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                updateLobbyCarColorIndicators();
+            }
+
+            // If Guest receives a live STATE packet from the Host for a newly started match that Guest hasn't transitioned into yet, auto-start immediately
+            if (!isHost && st.matchId && st.matchId !== currentMatchId && (gameMode === 'online_lobby' || isGameOver)) {
+                if (typeof st.collision === 'boolean') playerCollisionEnabled = st.collision;
+                if (typeof st.nightMode === 'boolean') nightModeEnabled = st.nightMode;
+                updateCollisionToggleButtons();
+                updateNightModeToggleButtons();
+                applyDayNightTheme(nightModeEnabled);
+                startOnlineMatchWithSeed(st.seed || matchSeed || 1001, st.matchId);
+            }
+
+            // Ignore stale packets from a previous match so they never shift spawn alignment
+            if (st.matchId && currentMatchId && st.matchId !== currentMatchId) return;
+
+            remoteState.connected = true;
+            remoteState.matchId = st.matchId || currentMatchId;
+            if (typeof st.offset === 'number') remoteState.targetOffset = st.offset;
+            if (typeof st.z === 'number') remoteState.targetZ = st.z;
+            if (typeof st.velX === 'number') remoteState.velX = st.velX;
+            if (typeof st.steerAngle === 'number') remoteState.steerAngle = st.steerAngle;
+            if (typeof st.speed === 'number') remoteState.speed = st.speed;
+            if (typeof st.distance === 'number') remoteState.distance = st.distance;
+
+            const prevCrashed = remoteState.crashed;
+            if (typeof st.crashed === 'boolean') {
+                remoteState.crashed = st.crashed;
+                if (st.crashed && !prevCrashed) {
+                    remoteState.crashZ = typeof st.z === 'number' ? st.z : playerZ;
+                }
+            }
+            if (typeof st.crashReason === 'string') remoteState.crashReason = st.crashReason;
+
+            // Update opponent HUD
+            if (domOpponentDistance) {
+                const shownDist = (!localCrashed && !remoteState.crashed) ? distanceScore : remoteState.distance;
+                domOpponentDistance.textContent = shownDist.toLocaleString();
+            }
+            if (domOpponentDot) {
+                domOpponentDot.className = remoteState.crashed
+                    ? 'w-2 h-2 rounded-full bg-red-500'
+                    : 'w-2 h-2 rounded-full bg-emerald-400';
+            }
+
+            // Continuously verify if both players are now crashed (no single-frame edge condition)
+            checkBothPlayersCrashedState();
+        }
+
+        function checkBothPlayersCrashedState() {
+            if (!isOnlineMode || gameMode !== 'online_playing') return;
+            if (localCrashed && remoteState.crashed) {
+                if (!isGameOver) {
+                    showFinalOnlineGameOver();
+                } else {
+                    refreshOnlineGameOverUI();
+                }
+            }
+        }
+
+        function updateCollisionToggleButtons() {
+            const btns = [
+                document.getElementById('btn-toggle-collision'),
+                document.getElementById('btn-gameover-collision')
+            ];
+            btns.forEach(btn => {
+                if (!btn) return;
+                if (playerCollisionEnabled) {
+                    btn.textContent = 'ON';
+                    btn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/40';
+                } else {
+                    btn.textContent = 'OFF';
+                    btn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-slate-400 border border-slate-600/40';
+                }
+                btn.disabled = !isHost;
+            });
+        }
+
+        function updateNightModeToggleButtons() {
+            // Single player button on Main Menu
+            const spBtn = document.getElementById('btn-menu-night');
+            if (spBtn) {
+                if (singlePlayerNightMode) {
+                    spBtn.textContent = 'ON';
+                    spBtn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-indigo-300 border border-indigo-400/50';
+                } else {
+                    spBtn.textContent = 'OFF';
+                    spBtn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-slate-400 border border-slate-600/40';
+                }
+            }
+
+            // Online Host-controlled buttons (Lobby & Game Over)
+            const mpBtns = [
+                document.getElementById('btn-lobby-night'),
+                document.getElementById('btn-gameover-night')
+            ];
+            mpBtns.forEach(btn => {
+                if (!btn) return;
+                if (nightModeEnabled) {
+                    btn.textContent = 'ON';
+                    btn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-indigo-300 border border-indigo-400/50';
+                } else {
+                    btn.textContent = 'OFF';
+                    btn.className = 'secondary-btn rounded-xl px-4 py-1.5 font-arcade text-xs font-bold uppercase tracking-wider text-slate-400 border border-slate-600/40';
+                }
+                btn.disabled = !isHost;
+            });
+        }
+
+        function handlePeerData(data) {
+            if (!data || !data.type) return;
+
+            if (data.type === 'GUEST_JOINED') {
+                remoteState.connected = true;
+                if (typeof data.color === 'string') {
+                    remoteState.color = data.color;
+                    applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                }
+                onGuestJoinedLobby();
+                updateLobbyCarColorIndicators();
+                sendPeerPacket({
+                    type: 'LOBBY_SYNC',
+                    collision: playerCollisionEnabled,
+                    nightMode: nightModeEnabled,
+                    seed: matchSeed,
+                    hostColor: localCarColor
+                });
+            } else if (data.type === 'LOBBY_SYNC') {
+                remoteState.connected = true;
+                if (typeof data.hostColor === 'string') {
+                    hostLobbyColor = data.hostColor;
+                    remoteState.color = data.hostColor;
+                    applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                }
+                onGuestJoinedLobby();
+                playerCollisionEnabled = !!data.collision;
+                if (typeof data.nightMode === 'boolean') {
+                    nightModeEnabled = data.nightMode;
+                    applyDayNightTheme(nightModeEnabled);
+                }
+                if (typeof data.seed === 'number') {
+                    matchSeed = data.seed;
+                }
+                updateCollisionToggleButtons();
+                updateNightModeToggleButtons();
+                updateLobbyCarColorIndicators();
+            } else if (data.type === 'START_MATCH') {
+                playerCollisionEnabled = !!data.collision;
+                if (typeof data.nightMode === 'boolean') {
+                    nightModeEnabled = data.nightMode;
+                }
+                if (typeof data.hostColor === 'string') {
+                    hostLobbyColor = data.hostColor;
+                    remoteState.color = data.hostColor;
+                    applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                }
+                updateCollisionToggleButtons();
+                updateNightModeToggleButtons();
+                applyDayNightTheme(nightModeEnabled);
+                if (currentMatchId !== data.matchId) {
+                    startOnlineMatchWithSeed(data.seed, data.matchId || Date.now());
+                }
+            } else if (data.type === 'STATE') {
+                applyIncomingRemoteState(data);
+            }
+        }
+
+        function onGuestJoinedLobby() {
+            remoteState.connected = true;
+            const slotP2Name = document.getElementById('slot-p2-name');
+            const slotP2Dot = document.getElementById('slot-p2-dot');
+            const slotP2Card = document.getElementById('slot-p2-card');
+            const btnHostStart = document.getElementById('btn-host-start');
+            const btnHostStartText = document.getElementById('btn-host-start-text');
+
+            if (slotP2Name) slotP2Name.textContent = 'Player 2 (Connected)';
+            if (slotP2Dot) slotP2Dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+            if (slotP2Card) slotP2Card.className = 'bg-slate-900/80 rounded-2xl p-3.5 border border-cyan-500/40 text-left';
+
+            if (isHost && btnHostStart) {
+                btnHostStart.disabled = false;
+                if (btnHostStartText) btnHostStartText.textContent = 'Start 2-Player Race';
+            }
+        }
+
+        async function createUniqueOnlineRoom() {
+            const errEl = document.getElementById('lobby-error-msg');
+            if (errEl) errEl.classList.add('hidden');
+
+            const createBtn = document.getElementById('btn-create-room');
+            if (createBtn) {
+                createBtn.disabled = true;
+                createBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>Creating...';
+            }
+
+            isHost = true;
+            isOnlineMode = true;
+            remoteState.connected = false;
+            playerCollisionEnabled = true;
+            nightModeEnabled = singlePlayerNightMode;
+            applyDayNightTheme(nightModeEnabled);
+            updateCollisionToggleButtons();
+            updateNightModeToggleButtons();
+
+            // Try generating a room code that doesn't match any existing online room in Cloud or PeerServer
+            let attempts = 0;
+            const tryClaimRoomCode = async () => {
+                attempts++;
+                const candidate = generateRandomCode();
+
+                if (window.CloudBridge) {
+                    const taken = await window.CloudBridge.isCodeTakenInCloud(candidate);
+                    if (taken && attempts < 10) {
+                        return tryClaimRoomCode();
+                    }
+                }
+
+                if (peerInstance) {
+                    peerInstance.destroy();
+                    peerInstance = null;
+                }
+
+                if (window.Peer) {
+                    const peerId = `miata-itch-room-${candidate}`;
+                    const peer = new window.Peer(peerId, {
+                        config: PEER_ICE_CONFIG,
+                        debug: 0
+                    });
+
+                    const openTimeout = setTimeout(() => {
+                        if (!roomCode) {
+                            finalizeHostRoomCreation(candidate);
+                        }
+                    }, 3500);
+
+                    peer.on('open', async () => {
+                        clearTimeout(openTimeout);
+                        peerInstance = peer;
+                        if (!roomCode) {
+                            finalizeHostRoomCreation(candidate);
+                        }
+                    });
+
+                    peer.on('connection', (conn) => {
+                        peerConn = conn;
+                        conn.on('open', () => {
+                            onGuestJoinedLobby();
+                            sendPeerPacket({
+                                type: 'LOBBY_SYNC',
+                                collision: playerCollisionEnabled,
+                                nightMode: nightModeEnabled,
+                                seed: matchSeed,
+                                hostColor: localCarColor
+                            });
+                        });
+                        conn.on('data', handlePeerData);
+                    });
+
+                    peer.on('error', (err) => {
+                        clearTimeout(openTimeout);
+                        if (err && err.type === 'unavailable-id' && attempts < 12) {
+                            // Room code already exists online! Automatically generate a new one.
+                            tryClaimRoomCode();
+                        } else if (!roomCode) {
+                            finalizeHostRoomCreation(candidate);
+                        }
+                    });
+                } else {
+                    finalizeHostRoomCreation(candidate);
+                }
+            };
+
+            await tryClaimRoomCode();
+        }
+
+        async function finalizeHostRoomCreation(code) {
+            if (roomCode === code) return;
+            roomCode = code;
+            matchSeed = Math.floor(Math.random() * 900000) + 100000;
+
+            const createBtn = document.getElementById('btn-create-room');
+            if (createBtn) {
+                createBtn.disabled = false;
+                createBtn.textContent = 'Create Room';
+            }
+
+            // Reset P2 slot UI
+            const slotP2Name = document.getElementById('slot-p2-name');
+            const slotP2Dot = document.getElementById('slot-p2-dot');
+            const slotP2Card = document.getElementById('slot-p2-card');
+            if (slotP2Name) slotP2Name.textContent = 'Waiting for Player...';
+            if (slotP2Dot) slotP2Dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+            if (slotP2Card) slotP2Card.className = 'bg-slate-900/80 rounded-2xl p-3.5 border border-slate-700/70 text-left';
+
+            document.getElementById('lobby-select-view').classList.add('hidden');
+            document.getElementById('lobby-room-view').classList.remove('hidden');
+            document.getElementById('display-room-code').textContent = roomCode;
+            updateLobbyCarColorIndicators();
+
+            const btnHostStart = document.getElementById('btn-host-start');
+            const btnHostStartText = document.getElementById('btn-host-start-text');
+            if (btnHostStart) {
+                btnHostStart.disabled = true;
+                btnHostStartText.textContent = 'Waiting for Player 2...';
+            }
+
+            // Connect Host to WSS Relay Bridge so devices on different networks/NATs can join instantaneously
+            WSSRelayBridge.connectRoom(roomCode, 'host', handlePeerData);
+
+            if (lobbySyncInterval) clearInterval(lobbySyncInterval);
+            lobbySyncInterval = setInterval(() => {
+                if (gameMode === 'online_lobby' && isHost && remoteState.connected) {
+                    sendPeerPacket({
+                        type: 'LOBBY_SYNC',
+                        collision: playerCollisionEnabled,
+                        nightMode: nightModeEnabled,
+                        seed: matchSeed,
+                        hostColor: localCarColor
+                    });
+                }
+            }, 1500);
+
+            if (window.CloudBridge) {
+                await window.CloudBridge.createCloudRoom(roomCode, {
+                    roomCode,
+                    hostPresent: true,
+                    guestPresent: false,
+                    hostColor: localCarColor,
+                    collision: playerCollisionEnabled,
+                    nightMode: nightModeEnabled,
+                    status: 'lobby',
+                    seed: matchSeed,
+                    matchId: 0,
+                    createdAt: Date.now()
+                });
+
+                window.CloudBridge.listenToRoom(roomCode, (data) => {
+                    if (data.guestColor && data.guestColor !== remoteState.color) {
+                        remoteState.color = data.guestColor;
+                        applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                        updateLobbyCarColorIndicators();
+                    }
+                    if (data.guestPresent && !remoteState.connected) {
+                        onGuestJoinedLobby();
+                        updateLobbyCarColorIndicators();
+                    }
+                    if (data.p2State) {
+                        applyIncomingRemoteState(data.p2State);
+                    }
+                });
+            }
+        }
+
+        async function joinExistingOnlineRoom(rawCode) {
+            const code = (rawCode || '').trim().toUpperCase();
+            const errEl = document.getElementById('lobby-error-msg');
+            const joinBtn = document.getElementById('btn-join-room');
+
+            if (!code || code.length < 4) {
+                if (errEl) {
+                    errEl.textContent = 'Please enter a valid room code.';
+                    errEl.classList.remove('hidden');
+                }
+                return;
+            }
+            if (errEl) errEl.classList.add('hidden');
+
+            if (joinBtn) {
+                joinBtn.disabled = true;
+                joinBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>Connecting...';
+            }
+
+            isHost = false;
+            isOnlineMode = true;
+            remoteState.connected = false;
+            roomCode = code;
+            updateCollisionToggleButtons();
+            updateNightModeToggleButtons();
+
+            let joinedSuccessfully = false;
+            let peerUnavailableError = false;
+
+            const resetJoinButton = () => {
+                if (joinBtn) {
+                    joinBtn.disabled = false;
+                    joinBtn.textContent = 'Join Room';
+                }
+            };
+
+            const enterGuestWaitingRoom = () => {
+                if (joinedSuccessfully) return;
+                joinedSuccessfully = true;
+                resetJoinButton();
+                if (errEl) errEl.classList.add('hidden');
+
+                document.getElementById('lobby-select-view').classList.add('hidden');
+                document.getElementById('lobby-room-view').classList.remove('hidden');
+                document.getElementById('display-room-code').textContent = roomCode;
+                onGuestJoinedLobby();
+                updateLobbyCarColorIndicators();
+
+                const btnHostStart = document.getElementById('btn-host-start');
+                const btnHostStartText = document.getElementById('btn-host-start-text');
+                if (btnHostStart) {
+                    btnHostStart.disabled = true;
+                    btnHostStartText.textContent = 'Waiting for Host to Start...';
+                }
+            };
+
+            // 1. Connect via WSS Relay Bridge in parallel (bypasses symmetric NATs / mobile firewalls across devices)
+            WSSRelayBridge.connectRoom(
+                roomCode,
+                'guest',
+                (data) => {
+                    if (data && (data.type === 'LOBBY_SYNC' || data.type === 'START_MATCH' || data.type === 'STATE')) {
+                        enterGuestWaitingRoom();
+                    }
+                    handlePeerData(data);
+                },
+                (isRelayReady) => {
+                    if (isRelayReady) {
+                        WSSRelayBridge.send({ type: 'GUEST_JOINED', color: localCarColor });
+                    }
+                }
+            );
+
+            // Periodically retry sending GUEST_JOINED while connecting or waiting in lobby
+            if (lobbySyncInterval) clearInterval(lobbySyncInterval);
+            lobbySyncInterval = setInterval(() => {
+                if (!isHost && isOnlineMode && (gameMode === 'online_lobby')) {
+                    sendPeerPacket({ type: 'GUEST_JOINED', color: localCarColor });
+                }
+            }, 1200);
+
+            // 2. Check Cloud Room if available
+            if (window.CloudBridge) {
+                const cloudRoom = await window.CloudBridge.getCloudRoom(roomCode);
+                if (cloudRoom) {
+                    playerCollisionEnabled = !!cloudRoom.collision;
+                    if (typeof cloudRoom.nightMode === 'boolean') {
+                        nightModeEnabled = cloudRoom.nightMode;
+                        applyDayNightTheme(nightModeEnabled);
+                    }
+                    if (cloudRoom.hostColor) {
+                        hostLobbyColor = cloudRoom.hostColor;
+                        remoteState.color = cloudRoom.hostColor;
+                        applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                    }
+                    updateCollisionToggleButtons();
+                    updateNightModeToggleButtons();
+                    enterGuestWaitingRoom();
+                    await window.CloudBridge.updateCloudRoom(roomCode, {
+                        guestPresent: true,
+                        guestColor: localCarColor
+                    });
+
+                    window.CloudBridge.listenToRoom(roomCode, (data) => {
+                        if (data.hostColor && data.hostColor !== remoteState.color) {
+                            hostLobbyColor = data.hostColor;
+                            remoteState.color = data.hostColor;
+                            applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+                            updateLobbyCarColorIndicators();
+                        }
+                        if (typeof data.collision === 'boolean') {
+                            playerCollisionEnabled = data.collision;
+                            updateCollisionToggleButtons();
+                        }
+                        if (typeof data.nightMode === 'boolean') {
+                            nightModeEnabled = data.nightMode;
+                            updateNightModeToggleButtons();
+                            applyDayNightTheme(nightModeEnabled);
+                        }
+                        if (data.status === 'playing' && data.matchId && data.matchId !== currentMatchId) {
+                            startOnlineMatchWithSeed(data.seed || 1001, data.matchId);
+                        }
+                        if (data.p1State) {
+                            applyIncomingRemoteState(data.p1State);
+                        }
+                    });
+                }
+            }
+
+            // 3. Connect via PeerJS WebRTC DataChannel with STUN/TURN & JSON serialization
+            if (window.Peer) {
+                if (peerInstance) peerInstance.destroy();
+                const peer = new window.Peer({
+                    config: PEER_ICE_CONFIG,
+                    debug: 0
+                });
+                peerInstance = peer;
+
+                peer.on('open', () => {
+                    const conn = peer.connect(`miata-itch-room-${roomCode}`, {
+                        reliable: true,
+                        serialization: 'json'
+                    });
+                    peerConn = conn;
+
+                    conn.on('open', () => {
+                        enterGuestWaitingRoom();
+                        sendPeerPacket({ type: 'GUEST_JOINED', color: localCarColor });
+                    });
+
+                    conn.on('data', (data) => {
+                        enterGuestWaitingRoom();
+                        handlePeerData(data);
+                    });
+                });
+
+                peer.on('error', (err) => {
+                    if (err && err.type === 'peer-unavailable') {
+                        peerUnavailableError = true;
+                    }
+                });
+            }
+
+            // 4. Connection timeout guard so it never hangs silently if room doesn't exist
+            setTimeout(() => {
+                if (!joinedSuccessfully) {
+                    resetJoinButton();
+                    if (errEl) {
+                        errEl.textContent = peerUnavailableError
+                            ? `Could not find an active room with code "${roomCode}".`
+                            : `Connection timed out for room "${roomCode}". Make sure the Host is in the lobby and try again.`;
+                        errEl.classList.remove('hidden');
+                    }
+                }
+            }, 6500);
+        }
+
+        function startOnlineMatchWithSeed(seed, matchId) {
+            SoundFX.init();
+            applyDayNightTheme(nightModeEnabled);
+            currentMatchId = matchId;
+            matchSeed = seed;
+            isOnlineMode = true;
+            gameMode = 'online_playing';
+            isGameOver = false;
+            localCrashed = false;
+            localCrashReason = '';
+
+            // Hide all modals & spectator banner
+            domMainMenuModal.classList.add('hidden');
+            domOnlineLobbyModal.classList.add('hidden');
+            domGameOverModal.classList.add('hidden');
+            domSpectatorBanner.classList.add('hidden');
+            domOpponentCard.classList.remove('hidden');
+            domRoomBadge.classList.remove('hidden');
+            domRoomCodeText.textContent = `ROOM: ${roomCode}`;
+
+            // Side-by-side spawning: Host on Left (-3.6), Guest on Right (+3.6) at exact same Z = 0
+            playerOffset = isHost ? HOST_SPAWN_OFFSET : GUEST_SPAWN_OFFSET;
+            playerX = playerOffset;
+            playerZ = 0;
+            playerVelX = 0;
+            currentSteerAngle = 0;
+            steerWheelAngle = 0;
+            currentRollAngle = 0;
+            currentPitchAngle = 0;
+            rollVelocity = 0;
+            distanceScore = 0; devDistanceOffset = 0; devSpeedOffset = 0; devUsed = false;
+            currentSpeed = BASE_SPEED;
+            onlineSpawnHoldTimer = 0.65; // Brief starting grid alignment hold so both players spawn together at Z = 0
+
+            // Initialize remote player side-by-side on the opposite lane at exact same Z = 0
+            const remoteStartOffset = isHost ? GUEST_SPAWN_OFFSET : HOST_SPAWN_OFFSET;
+            remoteState.matchId = matchId;
+            remoteState.offset = remoteStartOffset;
+            remoteState.targetOffset = remoteStartOffset;
+            remoteState.z = 0;
+            remoteState.targetZ = 0;
+            remoteState.crashZ = 0;
+            remoteState.velX = 0;
+            remoteState.steerAngle = 0;
+            remoteState.speed = BASE_SPEED;
+            remoteState.distance = 0;
+            remoteState.crashed = false;
+            remoteState.crashReason = '';
+
+            playerGroup.position.set(playerX, 0, 0);
+            playerGroup.rotation.set(0, 0, 0);
+            carVisualGroup.rotation.set(0, 0, 0);
+            applyCarColorToGroup(playerGroup, localCarColor);
+
+            remotePlayerGroup.visible = true;
+            remotePlayerGroup.position.set(remoteStartOffset, 0, 0);
+            remotePlayerGroup.rotation.set(0, 0, 0);
+            remoteCarVisualGroup.rotation.set(0, 0, 0);
+            applyCarColorToGroup(remotePlayerGroup, remoteState.color);
+
+            // Reset camera behind both side-by-side cars
+            const preset = cameraPresets[currentCamPreset];
+            camera.position.set(0, preset.height, preset.distance);
+            cameraLookTarget.set(0, 0.85, -preset.lookAhead);
+            camera.lookAt(cameraLookTarget);
+
+            domDistance.textContent = '0';
+            resetTrack();
+            clock.getDelta();
+            syncStateToNetwork(true);
+        }
+
+        function triggerGameOver(reason, iconClass) {
+            if (localCrashed) return;
+            localCrashed = true;
+            localCrashReason = 'Crashed';
+            SoundFX.playCrash();
+
+            if (distanceScore > bestScore && !devUsed) {
+                bestScore = distanceScore;
+                domBest.textContent = bestScore.toLocaleString();
+            }
+
+            if (!isOnlineMode) {
+                isGameOver = true;
+                domSoloScoreGrid.classList.remove('hidden');
+                domOnlineScoreGrid.classList.add('hidden');
+                domOnlineScoreGrid.classList.remove('flex');
+                domGameOverHeading.textContent = 'Crashed';
+                domGameOverHeading.className = 'font-arcade text-2xl sm:text-3xl font-black text-white tracking-wider uppercase mb-5';
+                domGameOverReason.classList.add('hidden');
+                document.getElementById('game-over-icon').className = iconClass || 'fa-solid fa-car-burst';
+                domFinalDistance.textContent = `${distanceScore.toLocaleString()} m`;
+                domFinalBest.textContent = `${bestScore.toLocaleString()} m`;
+                domBtnRestart.disabled = false;
+                domBtnRestartText.textContent = 'Race Again';
+                domRestartHintText.classList.remove('hidden');
+                domGameOverModal.classList.remove('hidden');
+                try {
+                    localStorage.setItem('miata_runner_best', String(bestScore));
+                } catch (e) {}
+                return;
+            }
+
+            // In 2-Player Online Mode: broadcast our crash immediately and with short redundant bursts
+            syncStateToNetwork(true);
+            setTimeout(() => syncStateToNetwork(true), 120);
+            setTimeout(() => syncStateToNetwork(true), 300);
+
+            if (!remoteState.crashed) {
+                // Other player is still alive and driving! Spectate them until they crash too.
+                domSpectatorTitle.textContent = 'Crashed — Spectating Teammate';
+                domSpectatorSubtitle.textContent = isHost
+                    ? 'Other player is still driving! You can start the next race once both cars crash.'
+                    : 'Other player is still driving! Waiting for both cars to crash.';
+                domSpectatorBanner.classList.remove('hidden');
+            } else {
+                // Both players have now crashed! Show the Online Match Over modal.
+                showFinalOnlineGameOver();
+            }
+        }
+
+        function refreshOnlineGameOverUI() {
+            const p1Dist = isHost ? distanceScore : remoteState.distance;
+            const p2Dist = isHost ? remoteState.distance : distanceScore;
+
+            if (domFinalP1Distance) domFinalP1Distance.textContent = `${p1Dist.toLocaleString()} m`;
+            if (domFinalP2Distance) domFinalP2Distance.textContent = `${p2Dist.toLocaleString()} m`;
+
+            let winnerText = 'Tie Race!';
+            if (p1Dist > p2Dist) winnerText = 'Left Car (Host) Wins the Round!';
+            else if (p2Dist > p1Dist) winnerText = 'Right Car (Guest) Wins the Round!';
+
+            if (domGameOverReason) {
+                domGameOverReason.textContent = winnerText;
+                domGameOverReason.classList.remove('hidden');
+            }
+
+            if (isHost) {
+                domBtnRestart.disabled = false;
+                domBtnRestartText.textContent = 'Race Again (Start Both Cars)';
+                domRestartHintText.classList.remove('hidden');
+            } else {
+                domBtnRestart.disabled = true;
+                domBtnRestartText.textContent = 'Waiting for Host to Restart...';
+                domRestartHintText.classList.add('hidden');
+            }
+        }
+
+        function showFinalOnlineGameOver() {
+            isGameOver = true;
+            domSpectatorBanner.classList.add('hidden');
+
+            domSoloScoreGrid.classList.add('hidden');
+            domOnlineScoreGrid.classList.remove('hidden');
+            domOnlineScoreGrid.classList.add('flex');
+
+            domGameOverHeading.textContent = 'Crashed';
+            domGameOverHeading.className = 'font-arcade text-2xl sm:text-3xl font-black text-white tracking-wider uppercase mb-1';
+            updateCollisionToggleButtons();
+            updateNightModeToggleButtons();
+            refreshOnlineGameOverUI();
+
+            domGameOverModal.classList.remove('hidden');
+        }
+
+        function startSinglePlayerGame() {
+            SoundFX.init();
+            SoundFX.playClick();
+            applyDayNightTheme(singlePlayerNightMode);
+            isOnlineMode = false;
+            gameMode = 'single';
+            isGameOver = false;
+            localCrashed = false;
+            localCrashReason = '';
+            matchSeed = Math.floor(Math.random() * 900000) + 1;
+
+            domMainMenuModal.classList.add('hidden');
+            domOnlineLobbyModal.classList.add('hidden');
+            domGameOverModal.classList.add('hidden');
+            domSpectatorBanner.classList.add('hidden');
+            domOpponentCard.classList.add('hidden');
+            domRoomBadge.classList.add('hidden');
+
+            if (remotePlayerGroup) remotePlayerGroup.visible = false;
+
+            distanceScore = 0; devDistanceOffset = 0; devSpeedOffset = 0; devUsed = false;
+            currentSpeed = BASE_SPEED;
+            playerX = 0;
+            playerOffset = 0; // Center lane in Single Player
+            playerZ = 0;
+            playerVelX = 0;
+            currentSteerAngle = 0;
+            steerWheelAngle = 0;
+            currentRollAngle = 0;
+            currentPitchAngle = 0;
+            rollVelocity = 0;
+
+            playerGroup.position.set(0, 0, 0);
+            playerGroup.rotation.set(0, 0, 0);
+            carVisualGroup.rotation.set(0, 0, 0);
+            applyCarColorToGroup(playerGroup, localCarColor);
+
+            domDistance.textContent = '0';
+            resetTrack();
+            clock.getDelta();
+        }
+
+        function restartGame() {
+            SoundFX.playClick();
+            if (isOnlineMode) {
+                // Only Host can trigger restart, and only once both players have crashed
+                if (!isHost || !localCrashed || !remoteState.crashed) return;
+                const newSeed = Math.floor(Math.random() * 900000) + 100000;
+                const newMatchId = Date.now();
+                sendPeerPacket({
+                    type: 'START_MATCH',
+                    seed: newSeed,
+                    matchId: newMatchId,
+                    collision: playerCollisionEnabled,
+                    nightMode: nightModeEnabled,
+                    hostColor: localCarColor
+                });
+                if (window.CloudBridge && roomCode) {
+                    window.CloudBridge.updateCloudRoom(roomCode, {
+                        status: 'playing',
+                        seed: newSeed,
+                        matchId: newMatchId,
+                        collision: playerCollisionEnabled,
+                        nightMode: nightModeEnabled,
+                        hostColor: localCarColor,
+                        'p1State.crashed': false,
+                        'p2State.crashed': false
+                    });
+                }
+                startOnlineMatchWithSeed(newSeed, newMatchId);
+            } else {
+                startSinglePlayerGame();
+            }
+        }
+
+        function updateGame(dt) {
+            // Clamp delta to avoid large jumps when switching tabs
+            const delta = Math.min(dt, 0.05);
+
+            // Dev mode: freeze everything (Shift+J x3, then L toggles it)
+            if (devMode) {
+                if (gameMode !== 'single' || isGameOver) devEnd(false); // left the run: drop dev mode
+                else { SoundFX.updateEngine(0, false, 0); return; }
+            }
+
+            // Gently drift 3D sky clouds
+            if (scene && scene.userData.cloudsGroup) {
+                scene.userData.cloudsGroup.children.forEach(cloud => {
+                    cloud.position.x += (cloud.userData.driftSpeed || 1.2) * delta;
+                    if (cloud.position.x > 160) cloud.position.x = -160;
+                });
+            }
+
+            // Scenic idle camera when sitting in Main Menu or Online Lobby
+            if (gameMode === 'menu' || gameMode === 'online_lobby') {
+                SoundFX.updateEngine(0, false, 0);
+                playerZ -= 18 * delta;
+                const roadCenterX = getTrackCenterAtZ(playerZ);
+                const roadAngleY = getTrackAngleAtZ(playerZ);
+                playerGroup.position.set(roadCenterX, 0, playerZ);
+                playerGroup.rotation.y = roadAngleY;
+
+                // Keep the showcase car pointing straight down the road. Clear the steering yaw, body roll,
+                // pitch and bob left over from the last run (a crash or Menu press mid-turn froze the car at an angle).
+                carVisualGroup.rotation.set(0, 0, 0);
+                carVisualGroup.position.y = 0;
+                playerVelX = 0;
+                currentSteerAngle = 0;
+                steerWheelAngle = 0;
+                currentRollAngle = 0;
+                currentPitchAngle = 0;
+                rollVelocity = 0;
+
+                const frontMostZ = -nextSegmentIndex * SEGMENT_LENGTH;
+                if (playerZ - frontMostZ < VISIBLE_SEGMENTS * SEGMENT_LENGTH) {
+                    spawnNextTrackSegment(false);
+                }
+                while (trackSegments.length > 0 && trackSegments[0].zEnd > playerZ + BEHIND_SEGMENTS * SEGMENT_LENGTH) {
+                    disposeSegment(trackSegments.shift());
+                }
+
+                camera.position.set(roadCenterX + Math.sin(playerZ * 0.03) * 3.5, 4.2, playerZ + 8.5);
+                cameraLookTarget.set(getTrackCenterAtZ(playerZ - 14), 1.0, playerZ - 14);
+                camera.lookAt(cameraLookTarget);
+
+                if (scene.userData.skyGroup) {
+                    scene.userData.skyGroup.position.z = playerZ;
+                    scene.userData.skyGroup.position.x = roadCenterX * 0.4;
+                }
+                if (grassMeadowTexture) {
+                    grassMeadowTexture.offset.y = -playerZ * 0.08;
+                    grassMeadowTexture.offset.x = (roadCenterX * 0.4) * 0.08;
+                }
+                return;
+            }
+
+            // Continuously check on every frame whether both online players have crashed
+            checkBothPlayersCrashedState();
+
+            if (isGameOver) {
+                SoundFX.updateEngine(0, false, 0);
+                // Keep syncing state periodically in Online Mode so a player who crashed moments earlier is guaranteed to receive our crashed state
+                if (isOnlineMode && gameMode === 'online_playing') {
+                    syncStateToNetwork(false);
+                }
+                return;
+            }
+
+            // Hold both cars side-by-side at Z = 0 briefly at match start so neither jumps ahead during network handshake
+            if (isOnlineMode && onlineSpawnHoldTimer > 0) {
+                SoundFX.updateEngine(BASE_SPEED * 0.65, true, 0);
+                onlineSpawnHoldTimer = Math.max(0, onlineSpawnHoldTimer - delta);
+                playerZ = 0;
+                remoteState.z = 0;
+                remoteState.targetZ = 0;
+                const roadCenterX = getTrackCenterAtZ(0);
+                playerX = roadCenterX + playerOffset;
+                playerGroup.position.set(playerX, 0, 0);
+                remotePlayerGroup.visible = true;
+                remotePlayerGroup.position.set(roadCenterX + remoteState.offset, 0, 0);
+                syncStateToNetwork(false);
+                return;
+            }
+
+            // 1. Update Local Player Car (ONLY if local player hasn't crashed)
+            if (!localCrashed) {
+                // Unlimited top speed with halved acceleration rate
+                const targetSpeed = BASE_SPEED + (distanceScore * ACCEL_PER_METER) + devSpeedOffset;
+                currentSpeed = THREE.MathUtils.lerp(currentSpeed, targetSpeed, delta * 1.25);
+
+                playerZ -= currentSpeed * delta;
+                distanceScore = Math.floor(Math.abs(playerZ)) + devDistanceOffset;
+
+                let steerInput = 0;
+                if (keys.left) steerInput -= 1;
+                if (keys.right) steerInput += 1;
+
+                // Progressive steering rack turn-in and caster self-centering
+                // Steering never drops below the base tuning; above STEER_REF_CLOSING it scales linearly with closing speed so a
+                // full lane swing stays at STEER_SWING_FRACTION of the gap window. Peak speed and response rates scale together.
+                const closingSpeed = Math.max(0, currentSpeed - TRAFFIC_SPEED);
+                const steerScale = Math.max(1, closingSpeed / STEER_REF_CLOSING);
+                const rackRate = (steerInput === 0 ? 14.0 : 9.5) * steerScale;
+                steerWheelAngle = THREE.MathUtils.lerp(steerWheelAngle, steerInput, Math.min(1, delta * rackRate));
+
+                // Tire grip & lateral velocity response
+                const prevVelX = playerVelX;
+                const targetVelX = steerWheelAngle * STEER_SPEED * steerScale;
+                const tireGripRate = (steerInput === 0 ? 15.5 : 10.5) * steerScale;
+                playerVelX = THREE.MathUtils.lerp(playerVelX, targetVelX, Math.min(1, delta * tireGripRate));
+                playerOffset += playerVelX * delta;
+
+                // Guardrails are a solid barrier (no crash): keep the Miata's rotated hitbox inside the rails and
+                // cancel any lateral velocity pushing into them, so the car slides along the rail instead.
+                const barrierExtent = Math.abs(MIATA_HALF_W * CAR_SCALE * Math.cos(currentSteerAngle)) +
+                                      Math.abs(MIATA_HALF_L * CAR_SCALE * Math.sin(currentSteerAngle));
+                const barrierMaxOffset = Math.max(0, (TRACK_WIDTH / 2) - 0.11 - barrierExtent);
+                if (Math.abs(playerOffset) > barrierMaxOffset) {
+                    const barrierSide = Math.sign(playerOffset);
+                    playerOffset = barrierSide * barrierMaxOffset;
+                    if (Math.sign(playerVelX) === barrierSide) playerVelX = 0;
+                }
+
+                const roadCenterX = getTrackCenterAtZ(playerZ);
+                const roadAngleY = getTrackAngleAtZ(playerZ);
+                playerX = roadCenterX + playerOffset;
+
+                playerGroup.position.set(playerX, 0, playerZ);
+                playerGroup.rotation.y = THREE.MathUtils.lerp(playerGroup.rotation.y, roadAngleY, delta * 12);
+
+                // Realistic car heading (yaw): aligns with actual velocity trajectory + front-tire slip angle
+                const velocityHeading = -Math.atan2(playerVelX, currentSpeed * 0.68);
+                const slipAngle = -steerWheelAngle * 0.045;
+                const targetYaw = velocityHeading + slipAngle;
+                currentSteerAngle = THREE.MathUtils.lerp(currentSteerAngle, targetYaw, delta * 16);
+
+                // Realistic spring-damped suspension body roll & weight-transfer pitch
+                const latAccel = (playerVelX - prevVelX) / Math.max(delta, 0.008);
+                const targetRoll = THREE.MathUtils.clamp((playerVelX * 0.0038) + (latAccel * 0.00055), -0.095, 0.095);
+                const springForce = (targetRoll - currentRollAngle) * 150;
+                rollVelocity = (rollVelocity + springForce * delta) * Math.exp(-14 * delta);
+                currentRollAngle += rollVelocity * delta;
+
+                const targetPitch = -Math.abs(steerWheelAngle) * 0.016 + Math.cos(playerZ * 0.45) * 0.004;
+                currentPitchAngle = THREE.MathUtils.lerp(currentPitchAngle, targetPitch, delta * 10);
+
+                carVisualGroup.rotation.y = currentSteerAngle;
+                carVisualGroup.rotation.z = currentRollAngle;
+                carVisualGroup.rotation.x = currentPitchAngle;
+                carVisualGroup.position.y = Math.sin(playerZ * 0.65) * 0.012 - Math.abs(currentRollAngle) * 0.12;
+
+                if (fallbackCarMesh && fallbackCarMesh.visible) {
+                    fallbackWheels.forEach((w, idx) => {
+                        w.rotation.x -= currentSpeed * delta * 0.8;
+                        if (idx < 2) {
+                            w.rotation.y = -steerWheelAngle * 0.32;
+                        }
+                    });
+                }
+                SoundFX.updateEngine(currentSpeed, true, steerWheelAngle);
+            } else {
+                SoundFX.updateEngine(0, false, 0);
+            }
+
+            // 2. Update Remote Player Car in Real Time (Online Mode)
+            if (isOnlineMode && remotePlayerGroup) {
+                remotePlayerGroup.visible = true;
+                if (!localCrashed && !remoteState.crashed) {
+                    // Keep both active players aligned at the exact same forward Z position so neither is in front of the other
+                    remoteState.z = playerZ;
+                    remoteState.targetZ = playerZ;
+                    remoteState.distance = distanceScore;
+                    if (domOpponentDistance) {
+                        domOpponentDistance.textContent = distanceScore.toLocaleString();
+                    }
+                    remoteState.offset = THREE.MathUtils.lerp(remoteState.offset, remoteState.targetOffset, delta * 18);
+                } else if (remoteState.crashed) {
+                    // Remote player crashed: keep their car stopped at their crash Z while local player continues ahead
+                    remoteState.z = remoteState.crashZ;
+                    remoteState.offset = THREE.MathUtils.lerp(remoteState.offset, remoteState.targetOffset, delta * 12);
+                } else {
+                    // Local player crashed and is spectating the surviving remote player driving ahead
+                    remoteState.targetZ -= remoteState.speed * delta;
+                    remoteState.z = THREE.MathUtils.lerp(remoteState.z, remoteState.targetZ, delta * 14);
+                    remoteState.offset = THREE.MathUtils.lerp(remoteState.offset, remoteState.targetOffset, delta * 16);
+                }
+
+                const remoteRoadCenterX = getTrackCenterAtZ(remoteState.z);
+                const remoteRoadAngleY = getTrackAngleAtZ(remoteState.z);
+                const remoteWorldX = remoteRoadCenterX + remoteState.offset;
+
+                remotePlayerGroup.position.set(remoteWorldX, 0, remoteState.z);
+                remotePlayerGroup.rotation.y = remoteRoadAngleY;
+                remoteCarVisualGroup.rotation.y = THREE.MathUtils.lerp(remoteCarVisualGroup.rotation.y, remoteState.steerAngle, delta * 14);
+                remoteCarVisualGroup.rotation.z = THREE.MathUtils.lerp(remoteCarVisualGroup.rotation.z, -remoteState.steerAngle * 0.35, delta * 12);
+
+                if (remoteFallbackCarMesh && remoteFallbackCarMesh.visible && !remoteState.crashed) {
+                    remoteFallbackWheels.forEach(w => {
+                        w.rotation.x -= remoteState.speed * delta * 0.8;
+                    });
+                }
+
+                // 3. Player-to-Player Collision Check (When enabled by Host and both cars are driving)
+                if (playerCollisionEnabled && !localCrashed && !remoteState.crashed) {
+                    const pHalfW = MIATA_HALF_W * CAR_SCALE;
+                    const pHalfL = MIATA_HALF_L * CAR_SCALE;
+                    const localYaw = playerGroup.rotation.y + carVisualGroup.rotation.y;
+                    const remoteYaw = remotePlayerGroup.rotation.y + remoteCarVisualGroup.rotation.y;
+
+                    const overlapping = checkOBBIntersection(
+                        playerX, playerZ, localYaw, pHalfW, pHalfL,
+                        remoteWorldX, remoteState.z, remoteYaw, pHalfW, pHalfL
+                    );
+                    const sideGap = playerX - remoteWorldX;
+                    if (bumpImpulseTimer > 0) bumpImpulseTimer -= delta;
+
+                    if (!overlapping) {
+                        // Remember which side of the other car we're on, so a bump always pushes us back out the way we came
+                        if (Math.abs(sideGap) > 0.05) playerBumpSide = sideGap > 0 ? 1 : -1;
+                    } else {
+                        // Push away from the other car; if the cars are nearly lined up, use the remembered side
+                        const pushDir = Math.abs(sideGap) > 0.3 ? (sideGap > 0 ? 1 : -1) : playerBumpSide;
+                        // Move out by exactly the distance needed to clear the (yawed) hitboxes. This never pulls the cars
+                        // closer together, so they can't get pinned to each other.
+                        const clearShift = lateralClearShift(
+                            playerX, playerZ, localYaw, pHalfW, pHalfL,
+                            remoteWorldX, remoteState.z, remoteYaw, pHalfW, pHalfL, pushDir
+                        );
+                        playerOffset += pushDir * (clearShift + 0.03);
+                        playerX = getTrackCenterAtZ(playerZ) + playerOffset;
+                        playerGroup.position.x = playerX;
+
+                        // One bounce per impact (not every frame) so steering takes over again right away
+                        if (bumpImpulseTimer <= 0) {
+                            playerVelX = pushDir * Math.max(16.5, pushDir * playerVelX);
+                            bumpImpulseTimer = 0.25;
+                        }
+                    }
+                }
+
+                syncStateToNetwork(false);
+            }
+
+            // Determine lead and trailing Z so track segments stay generated for both players (even when spectating)
+            const activeLeadZ = isOnlineMode ? Math.min(playerZ, remoteState.z) : playerZ;
+            const activeTrailZ = isOnlineMode ? Math.max(playerZ, remoteState.z) : playerZ;
+
+            const frontMostZ = -nextSegmentIndex * SEGMENT_LENGTH;
+            while (activeLeadZ - frontMostZ < VISIBLE_SEGMENTS * SEGMENT_LENGTH) {
+                spawnNextTrackSegment(true);
+                break;
+            }
+
+            while (trackSegments.length > 0 && trackSegments[0].zEnd > activeTrailZ + BEHIND_SEGMENTS * SEGMENT_LENGTH) {
+                const oldSeg = trackSegments.shift();
+                disposeSegment(oldSeg);
+            }
+
+            const carHalfWidth = MIATA_HALF_W * CAR_SCALE;
+            const carHalfLength = MIATA_HALF_L * CAR_SCALE;
+            const playerWorldYaw = playerGroup.rotation.y + carVisualGroup.rotation.y;
+
+            // 4. Guardrails no longer crash the car: they act as a solid barrier (clamped in the steering update above)
+
+            // 5. Advance all 50 MPH Toyota traffic cars & check OBB collisions for Local Player
+            for (let i = trafficCars.length - 1; i >= 0; i--) {
+                const traffic = trafficCars[i];
+
+                traffic.worldZ -= traffic.speed * delta;
+                const trackCenterAtCar = getTrackCenterAtZ(traffic.worldZ);
+                const trackAngleAtCar = getTrackAngleAtZ(traffic.worldZ);
+                traffic.worldX = trackCenterAtCar + traffic.localX;
+
+                traffic.mesh.position.set(traffic.worldX, 0, traffic.worldZ);
+                traffic.mesh.rotation.y = trackAngleAtCar;
+
+                if (traffic.worldZ > activeTrailZ + BEHIND_SEGMENTS * SEGMENT_LENGTH) {
+                    scene.remove(traffic.mesh);
+                    trafficCars.splice(i, 1);
+                    continue;
+                }
+
+                if (localCrashed || traffic.hit) continue;
+
+                const dx = Math.abs(playerX - traffic.worldX);
+                const dz = Math.abs(playerZ - traffic.worldZ);
+
+                // Play Doppler pass-by whoosh sound when weaving past a Toyota Camry closely
+                if (!traffic.passedAudio && dz < 4.5 * CAR_GROWTH && dx < 6.2 * CAR_GROWTH) {
+                    traffic.passedAudio = true;
+                    SoundFX.playPassBy();
+                }
+
+                // Broad-phase check followed by exact 2D Oriented Bounding Box (OBB) collision check
+                if (dx < 5.5 * CAR_GROWTH && dz < 7.5 * CAR_GROWTH) {
+                    if (checkOBBIntersection(
+                        playerX, playerZ, playerWorldYaw, carHalfWidth, carHalfLength,
+                        traffic.worldX, traffic.worldZ, trackAngleAtCar, traffic.halfWidth, traffic.halfDepth
+                    )) {
+                        traffic.hit = true;
+                        triggerGameOver('Crashed', 'fa-solid fa-car-burst');
+                    }
+                }
+            }
+
+            // 6. Camera Follow: follows Local Player while alive, or smoothly spectates Surviving Remote Player if Local Crashed
+            const spectatingRemote = isOnlineMode && localCrashed && !remoteState.crashed;
+            const focusZ = spectatingRemote ? remoteState.z : playerZ;
+            const focusOffset = spectatingRemote ? remoteState.offset : playerOffset;
+            const focusRoadX = getTrackCenterAtZ(focusZ);
+            const focusWorldX = focusRoadX + focusOffset;
+
+            const preset = cameraPresets[currentCamPreset];
+            const lookAheadZ = focusZ - preset.lookAhead;
+            const lookAheadRoadX = getTrackCenterAtZ(lookAheadZ);
+
+            const desiredCamX = THREE.MathUtils.lerp(camera.position.x, focusWorldX, spectatingRemote ? delta * 8 : 1);
+            const desiredCamY = THREE.MathUtils.lerp(camera.position.y, preset.height, delta * 8);
+            const desiredCamZ = THREE.MathUtils.lerp(camera.position.z, focusZ + preset.distance, spectatingRemote ? delta * 8 : 1);
+
+            camera.position.set(desiredCamX, desiredCamY, desiredCamZ);
+
+            const targetLookX = lookAheadRoadX + focusOffset;
+            cameraLookTarget.set(targetLookX, 0.85, lookAheadZ);
+            camera.lookAt(cameraLookTarget);
+
+            if (scene.userData.skyGroup) {
+                scene.userData.skyGroup.position.z = focusZ;
+                scene.userData.skyGroup.position.x = focusRoadX * 0.4;
+            }
+            if (grassMeadowTexture) {
+                grassMeadowTexture.offset.y = -focusZ * 0.08;
+                grassMeadowTexture.offset.x = (focusRoadX * 0.4) * 0.08;
+            }
+            if (scene.userData.dirLight) {
+                scene.userData.dirLight.position.set(focusWorldX + 40, 75, focusZ - 45);
+                scene.userData.dirLight.target.position.set(focusWorldX, 0, focusZ - 10);
+                scene.userData.dirLight.target.updateMatrixWorld();
+            }
+
+            // Update HUD
+            domDistance.textContent = distanceScore.toLocaleString();
+            const mph = localCrashed ? 0 : Math.round(currentSpeed * 2.2);
+            domSpeed.textContent = mph;
+        }
+
+        function openMainMenu() {
+            SoundFX.playClick();
+            gameMode = 'menu';
+            isOnlineMode = false;
+            isGameOver = false;
+            localCrashed = false;
+            roomCode = '';
+            applyDayNightTheme(singlePlayerNightMode);
+            updateNightModeToggleButtons();
+
+            if (lobbySyncInterval) {
+                clearInterval(lobbySyncInterval);
+                lobbySyncInterval = null;
+            }
+            WSSRelayBridge.disconnect();
+
+            if (peerConn) {
+                peerConn.close();
+                peerConn = null;
+            }
+            if (peerInstance) {
+                peerInstance.destroy();
+                peerInstance = null;
+            }
+
+            const createBtn = document.getElementById('btn-create-room');
+            if (createBtn) {
+                createBtn.disabled = false;
+                createBtn.textContent = 'Create Room';
+            }
+            const joinBtn = document.getElementById('btn-join-room');
+            if (joinBtn) {
+                joinBtn.disabled = false;
+                joinBtn.textContent = 'Join Room';
+            }
+
+            domMainMenuModal.classList.remove('hidden');
+            domOnlineLobbyModal.classList.add('hidden');
+            domGameOverModal.classList.add('hidden');
+            domSpectatorBanner.classList.add('hidden');
+            domOpponentCard.classList.add('hidden');
+            domRoomBadge.classList.add('hidden');
+
+            if (remotePlayerGroup) remotePlayerGroup.visible = false;
+        }
+
+        function toggleHostCollisionSetting() {
+            if (!isHost) return;
+            SoundFX.playClick();
+            playerCollisionEnabled = !playerCollisionEnabled;
+            updateCollisionToggleButtons();
+
+            sendPeerPacket({
+                type: 'LOBBY_SYNC',
+                collision: playerCollisionEnabled,
+                nightMode: nightModeEnabled,
+                seed: matchSeed,
+                hostColor: localCarColor
+            });
+            if (window.CloudBridge && roomCode) {
+                window.CloudBridge.updateCloudRoom(roomCode, {
+                    collision: playerCollisionEnabled
+                });
+            }
+        }
+
+        function toggleSinglePlayerNightMode() {
+            SoundFX.playClick();
+            singlePlayerNightMode = !singlePlayerNightMode;
+            applyDayNightTheme(singlePlayerNightMode);
+            updateNightModeToggleButtons();
+        }
+
+        function toggleHostNightModeSetting() {
+            if (!isHost) return;
+            SoundFX.playClick();
+            nightModeEnabled = !nightModeEnabled;
+            applyDayNightTheme(nightModeEnabled);
+            updateNightModeToggleButtons();
+
+            sendPeerPacket({
+                type: 'LOBBY_SYNC',
+                collision: playerCollisionEnabled,
+                nightMode: nightModeEnabled,
+                seed: matchSeed,
+                hostColor: localCarColor
+            });
+            if (window.CloudBridge && roomCode) {
+                window.CloudBridge.updateCloudRoom(roomCode, {
+                    nightMode: nightModeEnabled
+                });
+            }
+        }
+
+        function bindEvents() {
+            // Keyboard Controls (Arrow Keys + A/D + Space/Enter + C for Camera)
+            window.addEventListener('keydown', function (e) {
+                if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+                const code = e.code;
+                if (code === 'ArrowLeft' || code === 'KeyA') keys.left = true;
+                if (code === 'ArrowRight' || code === 'KeyD') keys.right = true;
+
+                if (code === 'KeyC') {
+                    currentCamPreset = (currentCamPreset + 1) % cameraPresets.length;
+                }
+
+                if (isGameOver && (code === 'Space' || code === 'Enter')) {
+                    if (!isOnlineMode || (isHost && localCrashed && remoteState.crashed)) {
+                        e.preventDefault();
+                        restartGame();
+                    }
+                }
+            });
+
+            window.addEventListener('keyup', function (e) {
+                const code = e.code;
+                if (code === 'ArrowLeft' || code === 'KeyA') keys.left = false;
+                if (code === 'ArrowRight' || code === 'KeyD') keys.right = false;
+            });
+
+            // Main Menu & Online Lobby Buttons
+            document.getElementById('btn-menu-single').addEventListener('click', startSinglePlayerGame);
+
+            document.getElementById('btn-menu-online').addEventListener('click', function () {
+                gameMode = 'online_lobby';
+                domMainMenuModal.classList.add('hidden');
+                domOnlineLobbyModal.classList.remove('hidden');
+                document.getElementById('lobby-select-view').classList.remove('hidden');
+                document.getElementById('lobby-room-view').classList.add('hidden');
+                document.getElementById('lobby-error-msg').classList.add('hidden');
+            });
+
+            document.getElementById('btn-lobby-back').addEventListener('click', openMainMenu);
+            document.getElementById('btn-open-menu').addEventListener('click', openMainMenu);
+            document.getElementById('btn-gameover-menu').addEventListener('click', openMainMenu);
+
+            document.getElementById('btn-create-room').addEventListener('click', createUniqueOnlineRoom);
+
+            document.getElementById('btn-join-room').addEventListener('click', function () {
+                const val = document.getElementById('input-room-code').value;
+                joinExistingOnlineRoom(val);
+            });
+
+            document.getElementById('input-room-code').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    joinExistingOnlineRoom(e.target.value);
+                }
+            });
+
+            document.getElementById('btn-copy-code').addEventListener('click', function () {
+                if (!roomCode) return;
+                const tempInput = document.createElement('input');
+                tempInput.value = roomCode;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+
+                const copyBtn = document.getElementById('btn-copy-code');
+                copyBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>';
+                setTimeout(() => {
+                    copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>';
+                }, 1500);
+            });
+
+            document.getElementById('btn-toggle-collision').addEventListener('click', toggleHostCollisionSetting);
+            document.getElementById('btn-gameover-collision').addEventListener('click', toggleHostCollisionSetting);
+
+            document.getElementById('btn-menu-night').addEventListener('click', toggleSinglePlayerNightMode);
+            document.getElementById('btn-lobby-night').addEventListener('click', toggleHostNightModeSetting);
+            document.getElementById('btn-gameover-night').addEventListener('click', toggleHostNightModeSetting);
+
+            document.getElementById('btn-sound-toggle').addEventListener('click', function () {
+                SoundFX.toggleMute();
+            });
+
+            document.getElementById('btn-host-start').addEventListener('click', function () {
+                if (!isHost) return;
+                SoundFX.playClick();
+                const newSeed = Math.floor(Math.random() * 900000) + 100000;
+                const newMatchId = Date.now();
+                const startPacket = {
+                    type: 'START_MATCH',
+                    seed: newSeed,
+                    matchId: newMatchId,
+                    collision: playerCollisionEnabled,
+                    nightMode: nightModeEnabled,
+                    hostColor: localCarColor
+                };
+                sendPeerPacket(startPacket);
+                // Re-send start signal briefly to ensure delivery across any mobile/wireless jitter
+                setTimeout(() => sendPeerPacket(startPacket), 150);
+                setTimeout(() => sendPeerPacket(startPacket), 350);
+
+                if (window.CloudBridge && roomCode) {
+                    window.CloudBridge.updateCloudRoom(roomCode, {
+                        status: 'playing',
+                        seed: newSeed,
+                        matchId: newMatchId,
+                        collision: playerCollisionEnabled,
+                        nightMode: nightModeEnabled,
+                        hostColor: localCarColor
+                    });
+                }
+                startOnlineMatchWithSeed(newSeed, newMatchId);
+            });
+
+            // Restart Button
+            document.getElementById('btn-restart').addEventListener('click', restartGame);
+
+            // Camera Angle Button
+            document.getElementById('btn-cam-view').addEventListener('click', function () {
+                SoundFX.playClick();
+                currentCamPreset = (currentCamPreset + 1) % cameraPresets.length;
+            });
+
+            // Helper to parse an uploaded File and route it to Miata or Toyota
+            function parseUploadedGLBFile(file, forcedRole) {
+                if (!file || !THREE.GLTFLoader) return;
+                const objectURL = URL.createObjectURL(file);
+                const loader = createConfiguredGLTFLoader();
+
+                loader.load(
+                    objectURL,
+                    function (gltf) {
+                        URL.revokeObjectURL(objectURL);
+                        let role = forcedRole;
+
+                        if (!role) {
+                            const lowerName = (file.name || '').toLowerCase();
+                            const assetTitle = (gltf.parser && gltf.parser.json && gltf.parser.json.asset && gltf.parser.json.asset.extras && gltf.parser.json.asset.extras.title)
+                                ? String(gltf.parser.json.asset.extras.title).toLowerCase()
+                                : '';
+
+                            if (lowerName.includes('toyota') || lowerName.includes('camry') || assetTitle.includes('toyota') || assetTitle.includes('camry')) {
+                                role = 'toyota';
+                            } else if (lowerName.includes('miata') || lowerName.includes('mx5') || lowerName.includes('mazda') || assetTitle.includes('miata') || assetTitle.includes('mazda')) {
+                                role = 'miata';
+                            } else {
+                                // Fallback if unnamed: if Miata isn't loaded yet, load Miata first, otherwise Toyota
+                                role = !miataLoadedFlag ? 'miata' : 'toyota';
+                            }
+                        }
+
+                        if (role === 'toyota') {
+                            applyLoadedToyotaModel(gltf.scene);
+                        } else {
+                            applyLoadedMiataModel(gltf.scene);
+                        }
+                    },
+                    undefined,
+                    function (err) {
+                        URL.revokeObjectURL(objectURL);
+                        console.error('Failed to parse uploaded .glb file:', err);
+                    }
+                );
+            }
+
+            // Multi-file "Load .GLB (Both)" input handler
+            const bothInput = document.getElementById('glb-both-input');
+            if (bothInput) {
+                bothInput.addEventListener('change', function (e) {
+                    const files = Array.from(e.target.files || []);
+                    files.forEach(file => parseUploadedGLBFile(file, null));
+                    bothInput.value = '';
+                });
+            }
+
+            // Dedicated Miata .GLB input handler
+            const miataInput = document.getElementById('glb-miata-input');
+            if (miataInput) {
+                miataInput.addEventListener('change', function (e) {
+                    const file = e.target.files && e.target.files[0];
+                    if (file) parseUploadedGLBFile(file, 'miata');
+                    miataInput.value = '';
+                });
+            }
+
+            // Dedicated Toyota .GLB input handler
+            const toyotaInput = document.getElementById('glb-toyota-input');
+            if (toyotaInput) {
+                toyotaInput.addEventListener('change', function (e) {
+                    const file = e.target.files && e.target.files[0];
+                    if (file) parseUploadedGLBFile(file, 'toyota');
+                    toyotaInput.value = '';
+                });
+            }
+
+            // Responsive Window Resize
+            window.addEventListener('resize', function () {
+                if (!camera || !renderer) return;
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // ===== Dev mode: hold Shift + tap J three times, then press L. Repeat the combo to apply and resume. =====
+        // The run freezes; click Speed (MPH) or Distance (m) in the HUD and type a value (Enter confirms).
+        const devPending = { speed: null, distance: null }; // typed values, applied on resume
+        let devJCount = 0, devLastKey = 0, devBanner = null;
+        const devShown = key => key === 'speed' ? Math.round(currentSpeed * 2.2) : distanceScore;
+
+        function devEdit(el, key) {
+            if (!devMode || el.querySelector('input')) return;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.inputMode = 'numeric';
+            input.dataset.dev = '1';
+            input.value = String(devPending[key] !== null ? devPending[key] : devShown(key));
+            input.style.cssText = 'width:8ch;background:#0f172a;color:inherit;font:inherit;border:1px solid #f59e0b;border-radius:6px;padding:0 4px;outline:none;';
+            let done = false;
+            const finish = save => {
+                if (done) return;
+                done = true;
+                const n = Math.floor(parseFloat(input.value.replace(/,/g, '')));
+                if (save && Number.isFinite(n)) devPending[key] = key === 'speed' ? Math.max(1, n) : Math.max(0, n);
+                const v = devPending[key] !== null ? devPending[key] : devShown(key);
+                el.textContent = key === 'speed' ? String(v) : v.toLocaleString();
+            };
+            input.addEventListener('blur', () => finish(true));
+            input.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+                else if (ev.key === 'Escape') finish(false);
+            });
+            el.textContent = '';
+            el.appendChild(input);
+            input.focus();
+            input.select();
+        }
+
+        function devEnd(apply) {
+            const ae = document.activeElement;
+            if (ae && ae.tagName === 'INPUT' && ae.dataset.dev) ae.blur(); // commits an edit that is still open
+            if (apply && (devPending.distance !== null || devPending.speed !== null)) {
+                const newDist = devPending.distance !== null ? devPending.distance : distanceScore;
+                const newSpeed = devPending.speed !== null ? devPending.speed / 2.2 : currentSpeed;
+                devDistanceOffset = newDist - Math.floor(Math.abs(playerZ)); // distance + speed ramp continue from here
+                distanceScore = newDist;
+                currentSpeed = newSpeed;
+                devSpeedOffset = newSpeed - (BASE_SPEED + newDist * ACCEL_PER_METER); // typed speed sticks, then keeps ramping
+                devUsed = true;
+            }
+            devMode = false;
+            devPending.speed = null;
+            devPending.distance = null;
+            if (devBanner) devBanner.style.display = 'none';
+            [domSpeed, domDistance].forEach(el => {
+                el.onclick = null;
+                el.style.pointerEvents = '';
+                el.style.cursor = '';
+                el.style.outline = '';
+                el.style.outlineOffset = '';
+            });
+            domDistance.textContent = distanceScore.toLocaleString();
+            domSpeed.textContent = Math.round(currentSpeed * 2.2);
+        }
+
+        function devToggle() {
+            if (devMode) { devEnd(true); return; }
+            if (gameMode !== 'single' || isGameOver || localCrashed) return; // single-player runs only
+            devMode = true;
+            keys.left = false;
+            keys.right = false;
+            devPending.speed = null;
+            devPending.distance = null;
+            if (!devBanner) {
+                devBanner = document.createElement('div');
+                devBanner.style.cssText = 'position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 14px;border-radius:12px;background:rgba(15,23,42,.92);border:1px solid #f59e0b;color:#fbbf24;font:700 12px Orbitron,sans-serif;letter-spacing:.08em;text-align:center;pointer-events:none;';
+                devBanner.innerHTML = 'DEV MODE &middot; PAUSED<br><span style="font:500 11px Inter,sans-serif;color:#e2e8f0;letter-spacing:0">Click Speed or Distance to type a value &middot; Shift+J &times;3, then L to resume</span>';
+                document.body.appendChild(devBanner);
+            }
+            devBanner.style.display = 'block';
+            [[domSpeed, 'speed'], [domDistance, 'distance']].forEach(([el, key]) => {
+                el.style.pointerEvents = 'auto';
+                el.style.cursor = 'text';
+                el.style.outline = '1px dashed #f59e0b';
+                el.style.outlineOffset = '3px';
+                el.onclick = () => devEdit(el, key);
+            });
+        }
+
+        window.addEventListener('keydown', e => {
+            if (e.repeat || e.code === 'ShiftLeft' || e.code === 'ShiftRight') return;
+            if (devMode && (e.code === 'KeyJ' || e.code === 'KeyL')) e.preventDefault(); // no stray letters in the fields
+            const now = performance.now();
+            if (now - devLastKey > 3000) devJCount = 0; // stale partial combo
+            devLastKey = now;
+            if (e.code === 'KeyJ' && e.shiftKey) devJCount = Math.min(devJCount + 1, 3);
+            else if (e.code === 'KeyL' && devJCount >= 3) { devJCount = 0; devToggle(); }
+            else devJCount = 0;
+        }, true);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            updateGame(dt);
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            initScene();
+            createPlayerAndLoadMiata();
+            resetTrack();
+            bindEvents();
+            animate();
+        };
+    })();
+</script>
+</body>
+</html>
